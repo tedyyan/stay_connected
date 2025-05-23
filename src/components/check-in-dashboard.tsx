@@ -1,0 +1,330 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { User } from "@supabase/supabase-js";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Bell,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  PlusCircle,
+  Users,
+  History,
+  Settings,
+} from "lucide-react";
+import { supabase } from "../supabase/supabase";
+import EventsList from "@/components/events-list";
+import ContactsList from "@/components/contacts-list";
+import EventForm from "@/components/event-form";
+import ContactForm from "@/components/contact-form";
+import ActivityHistory from "@/components/activity-history";
+import { Database } from "@/types/database.types";
+import { useSearchParams } from "next/navigation";
+import ApiKeysForm from "./api-keys-form";
+
+type Event = Database["public"]["Tables"]["events"]["Row"];
+type Contact = Database["public"]["Tables"]["contacts"]["Row"];
+
+interface CheckInDashboardProps {
+  initialEvents: Event[];
+  initialContacts: Contact[];
+  user: User;
+}
+
+export default function CheckInDashboard({
+  initialEvents,
+  initialContacts,
+  user,
+}: CheckInDashboardProps) {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+
+  const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const [activeTab, setActiveTab] = useState(tabParam || "events");
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Filter out deleted events for display
+  const filteredEvents = events.filter((event) => !event.deleted);
+
+  // Update active tab when URL parameter changes
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  // Subscribe to realtime changes
+  useEffect(() => {
+    try {
+      const eventsSubscription = supabase
+        .channel("events-changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "events" },
+          (payload) => {
+            if (
+              payload.eventType === "INSERT" &&
+              payload.new.user_id === user.id
+            ) {
+              setEvents((prev) => [payload.new as Event, ...prev]);
+            } else if (
+              payload.eventType === "UPDATE" &&
+              payload.new.user_id === user.id
+            ) {
+              setEvents((prev) =>
+                prev.map((event) =>
+                  event.id === payload.new.id ? (payload.new as Event) : event,
+                ),
+              );
+            } else if (payload.eventType === "DELETE") {
+              setEvents((prev) =>
+                prev.filter((event) => event.id !== payload.old.id),
+              );
+            }
+          },
+        )
+        .subscribe();
+
+      const contactsSubscription = supabase
+        .channel("contacts-changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "contacts" },
+          (payload) => {
+            if (
+              payload.eventType === "INSERT" &&
+              payload.new.user_id === user.id
+            ) {
+              setContacts((prev) => [payload.new as Contact, ...prev]);
+            } else if (
+              payload.eventType === "UPDATE" &&
+              payload.new.user_id === user.id
+            ) {
+              setContacts((prev) =>
+                prev.map((contact) =>
+                  contact.id === payload.new.id
+                    ? (payload.new as Contact)
+                    : contact,
+                ),
+              );
+            } else if (payload.eventType === "DELETE") {
+              setContacts((prev) =>
+                prev.filter((contact) => contact.id !== payload.old.id),
+              );
+            }
+          },
+        )
+        .subscribe();
+
+      return () => {
+        eventsSubscription.unsubscribe();
+        contactsSubscription.unsubscribe();
+      };
+    } catch (error) {
+      console.error("Error setting up realtime subscriptions:", error);
+      return () => {};
+    }
+  }, [user.id]);
+
+  const handleCheckIn = async (eventId: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "supabase-functions-check-in",
+        {
+          body: { eventId },
+        },
+      );
+
+      if (error) throw error;
+
+      // Update the local state
+      setEvents((prev) =>
+        prev.map((event) => {
+          if (event.id === eventId) {
+            return {
+              ...event,
+              last_check_in: data.timestamp,
+              status: "running",
+            };
+          }
+          return event;
+        }),
+      );
+    } catch (error) {
+      console.error("Error checking in:", error);
+      // Use a more user-friendly error message
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const formattedError = errorMessage.includes("404")
+        ? "The check-in service is currently unavailable. Please try again later."
+        : `Error checking in: ${errorMessage}`;
+
+      alert(formattedError);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddEvent = () => {
+    setEditingEvent(null);
+    setShowEventForm(true);
+  };
+
+  const handleEditEvent = (event: Event) => {
+    setEditingEvent(event);
+    setShowEventForm(true);
+  };
+
+  const handleAddContact = () => {
+    setEditingContact(null);
+    setShowContactForm(true);
+  };
+
+  const handleEditContact = (contact: Contact) => {
+    setEditingContact(contact);
+    setShowContactForm(true);
+  };
+
+  const handleCloseEventForm = () => {
+    setShowEventForm(false);
+    setEditingEvent(null);
+  };
+
+  const handleCloseContactForm = () => {
+    setShowContactForm(false);
+    setEditingContact(null);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Check-In Dashboard</h1>
+          <p className="text-muted-foreground mt-1">
+            Monitor your check-ins and manage your safety alerts
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {activeTab === "events" && (
+            <Button onClick={handleAddEvent}>
+              <PlusCircle className="mr-2 h-4 w-4" /> New Check-In
+            </Button>
+          )}
+          {activeTab === "contacts" && (
+            <Button onClick={handleAddContact}>
+              <PlusCircle className="mr-2 h-4 w-4" /> New Contact
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <Tabs
+        defaultValue="events"
+        value={activeTab}
+        onValueChange={setActiveTab}
+      >
+        <TabsList className="grid grid-cols-3 md:grid-cols-4 w-full md:w-[600px]">
+          <TabsTrigger value="events">
+            <Bell className="mr-2 h-4 w-4" /> Check-Ins
+          </TabsTrigger>
+          <TabsTrigger value="contacts">
+            <Users className="mr-2 h-4 w-4" /> Contacts
+          </TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="mr-2 h-4 w-4" /> History
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="hidden md:flex">
+            <Settings className="mr-2 h-4 w-4" /> Settings
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="events" className="space-y-4">
+          {filteredEvents.length === 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>No Check-Ins Yet</CardTitle>
+                <CardDescription>
+                  Create your first check-in to start monitoring your activity.
+                </CardDescription>
+              </CardHeader>
+              <CardFooter>
+                <Button onClick={handleAddEvent}>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Create Check-In
+                </Button>
+              </CardFooter>
+            </Card>
+          ) : (
+            <EventsList
+              events={filteredEvents}
+              contacts={contacts}
+              onCheckIn={handleCheckIn}
+              onEdit={handleEditEvent}
+              isLoading={isLoading}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="contacts" className="space-y-4">
+          {contacts.length === 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>No Contacts Yet</CardTitle>
+                <CardDescription>
+                  Add contacts who should be notified if you miss a check-in.
+                </CardDescription>
+              </CardHeader>
+              <CardFooter>
+                <Button onClick={handleAddContact}>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add Contact
+                </Button>
+              </CardFooter>
+            </Card>
+          ) : (
+            <ContactsList contacts={contacts} onEdit={handleEditContact} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="history">
+          <ActivityHistory userId={user.id} />
+        </TabsContent>
+
+        <TabsContent value="settings">
+          <ApiKeysForm userId={user.id} />
+        </TabsContent>
+      </Tabs>
+
+      {showEventForm && (
+        <EventForm
+          onClose={handleCloseEventForm}
+          event={editingEvent}
+          contacts={contacts}
+          userId={user.id}
+        />
+      )}
+
+      {showContactForm && (
+        <ContactForm
+          onClose={handleCloseContactForm}
+          contact={editingContact}
+          userId={user.id}
+        />
+      )}
+    </div>
+  );
+}
