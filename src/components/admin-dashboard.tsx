@@ -106,7 +106,7 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
 
     fetchData();
 
-    // Set up realtime subscriptions
+    // Subscribe to realtime changes
     const usersSubscription = supabase
       .channel("admin-users-changes")
       .on(

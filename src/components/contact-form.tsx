@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { supabase } from "../supabase/supabase";
+import { createClient } from "../supabase/client";
 import { Database } from "@/types/database.types";
 
 type Contact = Database["public"]["Tables"]["contacts"]["Row"];
@@ -37,6 +37,7 @@ export default function ContactForm({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const supabase = createClient();
 
   const handleSubmit = async () => {
     setFormError("");
@@ -77,6 +78,14 @@ export default function ContactForm({
         });
       } else {
         // Create new contact
+        console.log('Creating new contact:', {
+          user_id: userId,
+          name,
+          email,
+          phone,
+          deleted: false,
+          notification_preference: notificationPreference,
+        });
         const { data, error } = await supabase
           .from("contacts")
           .insert({
@@ -84,10 +93,16 @@ export default function ContactForm({
             name,
             email,
             phone,
+            deleted: false,
+            notification_preference: notificationPreference,
           })
           .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error creating contact:', error);
+          throw error;
+        }
+        console.log('Contact created successfully:', data);
 
         // Log the activity
         await supabase.from("activity_logs").insert({

@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS public.notification_logs (
 -- Create activity logs table
 CREATE TABLE IF NOT EXISTS public.activity_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id TEXT NOT NULL,
+  user_id UUID NOT NULL,
   event_id UUID REFERENCES public.events(id),
   action TEXT NOT NULL,
   details JSONB,
@@ -77,17 +77,17 @@ USING (auth.uid() = user_id);
 DROP POLICY IF EXISTS "Users can view their own events" ON public.events;
 CREATE POLICY "Users can view their own events"
 ON public.events FOR SELECT
-USING (auth.uid() = user_id);
+USING (auth.uid()::uuid = user_id);
 
 DROP POLICY IF EXISTS "Users can insert their own events" ON public.events;
 CREATE POLICY "Users can insert their own events"
 ON public.events FOR INSERT
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK (auth.uid()::uuid = user_id);
 
 DROP POLICY IF EXISTS "Users can update their own events" ON public.events;
 CREATE POLICY "Users can update their own events"
 ON public.events FOR UPDATE
-USING (auth.uid() = user_id);
+USING (auth.uid()::uuid = user_id);
 
 -- Notification logs policies
 DROP POLICY IF EXISTS "Users can view their own notification logs" ON public.notification_logs;

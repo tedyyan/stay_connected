@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mail, Phone, Edit, Trash2, Globe } from "lucide-react";
-import { supabase } from "../supabase/supabase";
+import { createClient } from "../supabase/client";
 import { Database } from "@/types/database.types";
 import {
   Dialog,
@@ -33,6 +33,7 @@ export default function ContactsList({ contacts, onEdit }: ContactsListProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const supabase = createClient();
 
   const handleDeleteClick = (contact: Contact) => {
     setContactToDelete(contact);

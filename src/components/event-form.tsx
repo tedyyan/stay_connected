@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { supabase } from "../supabase/supabase";
+import { createClient } from "../supabase/client";
 import { Database } from "@/types/database.types";
 
 type Event = Database["public"]["Tables"]["events"]["Row"];
@@ -50,6 +50,7 @@ export default function EventForm({
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const supabase = createClient();
 
   useEffect(() => {
     if (event) {
@@ -85,23 +86,45 @@ export default function EventForm({
 
     try {
       const maxInactivityTime = `${inactivityValue} ${inactivityUnit}${parseInt(inactivityValue) > 1 ? "s" : ""}`;
-      const contactsArray = selectedContacts.map((id) => ({ id }));
 
       if (event) {
         // Update existing event
-        const { error } = await supabase
+        const { error: updateError } = await supabase
           .from("events")
           .update({
             name,
             memo,
             notification_content: notificationContent,
             max_inactivity_time: maxInactivityTime,
-            contacts: contactsArray,
             updated_at: new Date().toISOString(),
+            contacts: [], // Maintain empty array for the contacts column
           })
           .eq("id", event.id);
 
-        if (error) throw error;
+        if (updateError) throw updateError;
+
+        // Update event_contacts
+        // First, delete existing associations
+        const { error: deleteError } = await supabase
+          .from("event_contacts")
+          .delete()
+          .eq("event_id", event.id);
+
+        if (deleteError) throw deleteError;
+
+        // Then, create new associations
+        if (selectedContacts.length > 0) {
+          const eventContactsToInsert = selectedContacts.map(contactId => ({
+            event_id: event.id,
+            contact_id: contactId
+          }));
+
+          const { error: insertError } = await supabase
+            .from("event_contacts")
+            .insert(eventContactsToInsert);
+
+          if (insertError) throw insertError;
+        }
 
         // Log the activity
         await supabase.from("activity_logs").insert({
@@ -112,7 +135,8 @@ export default function EventForm({
         });
       } else {
         // Create new event
-        const { data, error } = await supabase
+        console.log('Creating new event with user_id:', userId);
+        const { data: newEvent, error: createError } = await supabase
           .from("events")
           .insert({
             user_id: userId,
@@ -120,19 +144,42 @@ export default function EventForm({
             memo,
             notification_content: notificationContent,
             max_inactivity_time: maxInactivityTime,
-            contacts: contactsArray,
             last_check_in: new Date().toISOString(),
             status: "running",
+            contacts: [], // Add default empty array for the contacts column
           })
-          .select();
+          .select()
+          .single();
 
-        if (error) throw error;
+        if (createError) {
+          console.error('Error creating event:', createError);
+          throw createError;
+        }
+
+        console.log('Event created successfully:', newEvent);
+
+        // Create event_contacts associations
+        if (selectedContacts.length > 0 && newEvent) {
+          const eventContactsToInsert = selectedContacts.map(contactId => ({
+            event_id: newEvent.id,
+            contact_id: contactId
+          }));
+
+          const { error: contactsError } = await supabase
+            .from("event_contacts")
+            .insert(eventContactsToInsert);
+
+          if (contactsError) {
+            console.error('Error creating event_contacts:', contactsError);
+            throw contactsError;
+          }
+        }
 
         // Log the activity
-        if (data && data[0]) {
+        if (newEvent) {
           await supabase.from("activity_logs").insert({
             user_id: userId,
-            event_id: data[0].id,
+            event_id: newEvent.id,
             action: "create_event",
             details: { event_name: name },
           });

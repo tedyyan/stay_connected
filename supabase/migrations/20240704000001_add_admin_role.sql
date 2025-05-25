@@ -64,7 +64,7 @@ DROP POLICY IF EXISTS "Users can view their own events" ON public.events;
 CREATE POLICY "Users can view their own events or admins can view all"
 ON public.events FOR SELECT
 USING (
-  auth.uid() = user_id OR 
+  auth.uid()::uuid = user_id OR 
   EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND is_admin = TRUE)
 );
 
@@ -72,7 +72,7 @@ DROP POLICY IF EXISTS "Users can update their own events" ON public.events;
 CREATE POLICY "Users can update their own events or admins can update all"
 ON public.events FOR UPDATE
 USING (
-  auth.uid() = user_id OR 
+  auth.uid()::uuid = user_id OR 
   EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND is_admin = TRUE)
 );
 

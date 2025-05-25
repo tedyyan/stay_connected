@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { supabase } from "../supabase/supabase";
+import { createClient } from "../supabase/client";
 import { Database } from "@/types/database.types";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import {
@@ -34,21 +34,65 @@ export default function ActivityHistory({ userId }: ActivityHistoryProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredLogs, setFilteredLogs] = useState<ActivityLog[]>([]);
+  const [events, setEvents] = useState<Database["public"]["Tables"]["events"]["Row"][]>([]);
+  const [mounted, setMounted] = useState(false);
+  const supabase = createClient();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const fetchLogs = async () => {
       setIsLoading(true);
       try {
-        const { data, error } = await supabase
+        console.log('Fetching logs for user:', userId);
+        
+        // First get the user's event IDs
+        const { data: eventsData, error: eventsError } = await supabase
+          .from('events')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('deleted', false);
+
+        if (eventsError) {
+          console.error('Error fetching events:', eventsError);
+          throw eventsError;
+        }
+        
+        console.log('Events query result:', eventsData);
+        const eventIds = eventsData?.map(e => e.id) || [];
+        console.log('Found event IDs:', eventIds);
+        
+        // Then get activity logs
+        let query = supabase
           .from("activity_logs")
-          .select("*")
-          .eq("user_id", userId)
+          .select(`
+            *,
+            events:events(name)
+          `)
           .order("created_at", { ascending: false })
           .limit(100);
 
-        if (error) throw error;
+        if (eventIds.length > 0) {
+          const filter = `user_id.eq.${userId},event_id.in.(${eventIds.join(',')})`;
+          console.log('Using filter:', filter);
+          query = query.or(filter);
+        } else {
+          console.log('No events found, only querying user activities');
+          query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error('Error fetching logs:', error);
+          throw error;
+        }
+        console.log('Activity logs query result:', { data, error });
         setLogs(data || []);
         setFilteredLogs(data || []);
+        setEvents(eventsData || []);
       } catch (error) {
         console.error("Error fetching activity logs:", error);
       } finally {
@@ -67,9 +111,10 @@ export default function ActivityHistory({ userId }: ActivityHistoryProps) {
           event: "INSERT",
           schema: "public",
           table: "activity_logs",
-          filter: `user_id=eq.${userId}`,
+          filter: `user_id.eq.${userId}`,
         },
         (payload) => {
+          console.log('Received new activity log (user):', payload.new);
           setLogs((prev) => [payload.new as ActivityLog, ...prev]);
           setFilteredLogs((prev) => {
             const newLogs = [payload.new as ActivityLog, ...prev];
@@ -85,7 +130,7 @@ export default function ActivityHistory({ userId }: ActivityHistoryProps) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [userId]);
+  }, [userId, searchTerm]);
 
   useEffect(() => {
     if (searchTerm) {
@@ -138,7 +183,8 @@ export default function ActivityHistory({ userId }: ActivityHistoryProps) {
 
   const getActionDescription = (log: ActivityLog) => {
     const details = log.details as Record<string, any> | null;
-    const eventName = details?.event_name || "Unknown event";
+    const eventData = (log as any).events;
+    const eventName = eventData?.name || details?.event_name || "Unknown event";
     const contactName = details?.contact_name || "Unknown contact";
     const result = details?.result
       ? ` (${details.result.processed?.length || 0} events processed)`
@@ -160,59 +206,61 @@ export default function ActivityHistory({ userId }: ActivityHistoryProps) {
       case "delete_contact":
         return `Deleted contact "${contactName}"`;
       case "pause_event":
-        return `Paused check-in "${eventName}"`;
+        return `Paused event "${eventName}"`;
       case "resume_event":
-        return `Resumed check-in "${eventName}"`;
-      case "scheduled_check":
-        return `System performed scheduled inactivity check${result}`;
+        return `Resumed event "${eventName}"`;
       default:
-        return log.action.replace(/_/g, " ");
+        return `Unknown action`;
     }
   };
 
+  if (!mounted) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Activity History</CardTitle>
+          <CardDescription>Track your recent activities and check-ins</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Activity History</CardTitle>
-        <CardDescription>Recent activity and check-ins</CardDescription>
-        <div className="mt-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search activities..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+        <CardDescription>Track your recent activities and check-ins</CardDescription>
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search activities..."
+            className="pl-8"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="text-center py-4">
-            <p className="text-muted-foreground">Loading activity history...</p>
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
           </div>
-        ) : filteredLogs.length === 0 ? (
-          <div className="text-center py-4">
-            <p className="text-muted-foreground">
-              {searchTerm
-                ? "No matching activities found"
-                : "No activity history yet"}
-            </p>
-          </div>
-        ) : (
+        ) : filteredLogs.length > 0 ? (
           <div className="space-y-4">
             {filteredLogs.map((log) => (
               <div
                 key={log.id}
-                className="flex items-start gap-3 pb-3 border-b last:border-0"
+                className="flex items-start space-x-3 border-b border-gray-100 pb-4 last:border-0"
               >
-                <div className="mt-0.5">{getActionIcon(log.action)}</div>
+                <div className="mt-1">{getActionIcon(log.action)}</div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    {getActionDescription(log)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm font-medium">{getActionDescription(log)}</p>
+                  <p className="text-xs text-gray-500" suppressHydrationWarning>
                     {formatDistanceToNow(parseISO(log.created_at), {
                       addSuffix: true,
                     })}
@@ -220,6 +268,10 @@ export default function ActivityHistory({ userId }: ActivityHistoryProps) {
                 </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            No activity logs found
           </div>
         )}
       </CardContent>

@@ -52,12 +52,23 @@ serve(async (req) => {
     }
 
     // Log the activity
-    await supabase.from("activity_logs").insert({
-      user_id: event.user_id,
-      event_id: eventId,
-      action: "check_in",
-      details: { timestamp: now, event_name: event.name },
-    });
+    const { data: activityLog, error: activityError } = await supabase
+      .from("activity_logs")
+      .insert({
+        user_id: event.user_id,
+        event_id: eventId,
+        action: "check_in",
+        details: { timestamp: now, event_name: event.name },
+      })
+      .select()
+      .single();
+
+    if (activityError) {
+      console.error("Failed to create activity log:", activityError);
+      throw new Error(`Failed to create activity log: ${activityError.message}`);
+    }
+
+    console.log("Created activity log:", activityLog);
 
     return new Response(
       JSON.stringify({

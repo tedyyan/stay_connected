@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -32,6 +32,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/use-toast";
+import { useRouter } from "next/navigation";
+import { User } from '@supabase/supabase-js';
 
 type Event = Database["public"]["Tables"]["events"]["Row"];
 type Contact = Database["public"]["Tables"]["contacts"]["Row"];
@@ -51,9 +54,31 @@ export default function EventsList({
   onEdit,
   isLoading,
 }: EventsListProps) {
+  const [mounted, setMounted] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isNotifying, setIsNotifying] = useState<Record<string, boolean>>({});
+  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    setMounted(true);
+
+    // Get initial session
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+    });
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleDeleteClick = (event: Event) => {
     setEventToDelete(event);
@@ -114,6 +139,104 @@ export default function EventsList({
         `Error ${newStatus === "paused" ? "pausing" : "resuming"} event:`,
         error,
       );
+    }
+  };
+
+  const handleNotifyContacts = async (event: Event) => {
+    setIsNotifying(prev => ({ ...prev, [event.id]: true }));
+    try {
+      console.log('Client: Starting notification process');
+      
+      // Check if user is signed in
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('Client: Auth check result:', { 
+        hasUser: !!user, 
+        error: userError?.message,
+        userId: user?.id 
+      });
+      
+      if (!user) {
+        console.log('Client: No user found, redirecting to sign in');
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to notify contacts.",
+          variant: "destructive",
+        });
+        router.push('/sign-in');
+        return;
+      }
+
+      console.log('Client: Making API request for event:', event.id);
+      const response = await fetch('/api/notify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ eventIds: [event.id], force: true }),
+        credentials: 'include',
+      });
+
+      console.log('Client: API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Client: API error:', errorData);
+        if (response.status === 401) {
+          setUser(null);
+          toast({
+            title: "Session Expired",
+            description: "Your session has expired. Please sign in again.",
+            variant: "destructive",
+          });
+          router.push('/sign-in');
+          return;
+        }
+        throw new Error(errorData.error || 'Failed to process notification request');
+      }
+
+      const data = await response.json();
+      console.log('Client: API response data:', data);
+      
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to process notification request');
+      }
+
+      console.log('Client: Notification successful:', {
+        processedCount: data.processed?.length
+      });
+
+      toast({
+        title: "✅ Notifications Sent Successfully",
+        description: `Contacts have been notified for event "${event.name}". ${data.processed?.length || 0} notification${data.processed?.length === 1 ? '' : 's'} processed.`,
+        variant: "default",
+        duration: 5000, // Show for 5 seconds
+      });
+
+      // Update the UI to show the notification was sent
+      const { error: logError } = await supabase
+        .from("activity_logs")
+        .insert({
+          user_id: user.id,
+          event_id: event.id,
+          action: "manual_notification_sent",
+          details: {
+            event_name: event.name,
+            notifications_sent: data.processed?.length
+          },
+        });
+
+      if (logError) {
+        console.error('Error logging notification activity:', logError);
+      }
+    } catch (error) {
+      console.error("Client: Error in notification process:", error);
+      toast({
+        title: "Failed to notify contacts",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsNotifying(prev => ({ ...prev, [event.id]: false }));
     }
   };
 
@@ -208,6 +331,39 @@ export default function EventsList({
       })
       .join(", ");
   };
+
+  if (!mounted) {
+    return (
+      <div className="space-y-4">
+        {events.map((event) => (
+          <Card key={event.id} className="overflow-hidden">
+            <div className="h-1 bg-gray-200" />
+            <CardHeader className="pb-2">
+              <div className="flex justify-between items-start">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    {event.name}
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    {event.memo || "No description provided"}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pb-2">
+              <div className="animate-pulse flex space-x-4">
+                <div className="flex-1 space-y-4 py-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 rounded"></div>
+                  <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -325,13 +481,32 @@ export default function EventsList({
               </div>
             </CardContent>
             <CardFooter>
-              <Button
-                className="w-full"
-                onClick={() => onCheckIn(event.id)}
-                disabled={isLoading || event.status === "paused"}
-              >
-                {isLoading ? "Checking in..." : "I'm Here"}
-              </Button>
+              <div className="w-full flex gap-2">
+                <Button
+                  className="flex-1"
+                  onClick={() => onCheckIn(event.id)}
+                  disabled={isLoading || event.status === "paused"}
+                >
+                  {isLoading ? "Checking in..." : "I'm Here"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleNotifyContacts(event)}
+                  disabled={isNotifying[event.id]}
+                >
+                  {isNotifying[event.id] ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2" />
+                      Notifying...
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="mr-2 h-4 w-4" />
+                      Notify Contacts
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardFooter>
           </Card>
         );

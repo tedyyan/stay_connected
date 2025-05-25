@@ -37,7 +37,7 @@ export default async function Dashboard() {
     .select("*")
     .eq("user_id", user.id)
     .eq("deleted", false)
-    .order("name", { ascending: true });
+    .order("created_at", { ascending: false });
 
   return (
     <>

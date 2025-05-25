@@ -21,8 +21,13 @@ import {
   Users,
   History,
   Settings,
+  Mail,
+  Phone,
+  Edit,
+  Trash2,
+  Globe,
 } from "lucide-react";
-import { supabase } from "../supabase/supabase";
+import { createClient } from "../supabase/client";
 import EventsList from "@/components/events-list";
 import ContactsList from "@/components/contacts-list";
 import EventForm from "@/components/event-form";
@@ -48,6 +53,7 @@ export default function CheckInDashboard({
 }: CheckInDashboardProps) {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
+  const supabase = createClient();
 
   const [events, setEvents] = useState<Event[]>(initialEvents);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
@@ -70,6 +76,8 @@ export default function CheckInDashboard({
 
   // Subscribe to realtime changes
   useEffect(() => {
+    console.log('Setting up realtime subscriptions with initial contacts:', initialContacts);
+
     try {
       const eventsSubscription = supabase
         .channel("events-changes")
@@ -106,32 +114,35 @@ export default function CheckInDashboard({
           "postgres_changes",
           { event: "*", schema: "public", table: "contacts" },
           (payload) => {
-            if (
-              payload.eventType === "INSERT" &&
-              payload.new.user_id === user.id
-            ) {
-              setContacts((prev) => [payload.new as Contact, ...prev]);
-            } else if (
-              payload.eventType === "UPDATE" &&
-              payload.new.user_id === user.id
-            ) {
-              setContacts((prev) =>
-                prev.map((contact) =>
-                  contact.id === payload.new.id
-                    ? (payload.new as Contact)
-                    : contact,
-                ),
-              );
-            } else if (payload.eventType === "DELETE") {
-              setContacts((prev) =>
-                prev.filter((contact) => contact.id !== payload.old.id),
-              );
+            console.log('Contacts realtime update received:', payload);
+            
+            if (payload.eventType === "INSERT" && payload.new.user_id === user.id) {
+              console.log('New contact received:', payload.new);
+              if (!payload.new.deleted) {
+                setContacts((prev) => {
+                  console.log('Current contacts:', prev);
+                  const newContacts = [payload.new as Contact, ...prev];
+                  console.log('Updated contacts:', newContacts);
+                  return newContacts;
+                });
+              }
+            } else if (payload.eventType === "UPDATE" && payload.new.user_id === user.id) {
+              setContacts((prev) => {
+                if (payload.new.deleted) {
+                  return prev.filter((contact) => contact.id !== payload.new.id);
+                } else {
+                  return prev.map((contact) =>
+                    contact.id === payload.new.id ? (payload.new as Contact) : contact
+                  );
+                }
+              });
             }
           },
         )
         .subscribe();
 
       return () => {
+        console.log('Cleaning up subscriptions');
         eventsSubscription.unsubscribe();
         contactsSubscription.unsubscribe();
       };
@@ -140,6 +151,11 @@ export default function CheckInDashboard({
       return () => {};
     }
   }, [user.id]);
+
+  // Debug effect for contacts changes
+  useEffect(() => {
+    console.log('Contacts state updated:', contacts);
+  }, [contacts]);
 
   const handleCheckIn = async (eventId: string) => {
     setIsLoading(true);

@@ -16,10 +16,11 @@ export interface Database {
           name: string;
           email: string | null;
           phone: string | null;
-          social_media: Json | null;
+          social_media: Json;
           created_at: string;
           updated_at: string;
           deleted: boolean;
+          notification_preference: string;
         };
         Insert: {
           id?: string;
@@ -27,10 +28,11 @@ export interface Database {
           name: string;
           email?: string | null;
           phone?: string | null;
-          social_media?: Json | null;
+          social_media?: Json;
           created_at?: string;
           updated_at?: string;
           deleted?: boolean;
+          notification_preference?: string;
         };
         Update: {
           id?: string;
@@ -38,10 +40,11 @@ export interface Database {
           name?: string;
           email?: string | null;
           phone?: string | null;
-          social_media?: Json | null;
+          social_media?: Json;
           created_at?: string;
           updated_at?: string;
           deleted?: boolean;
+          notification_preference?: string;
         };
       };
       events: {
