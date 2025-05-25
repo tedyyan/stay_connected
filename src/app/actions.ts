@@ -54,20 +54,27 @@ export const signUpAction = async (formData: FormData) => {
 
       if (updateError) {
         // Log the specific error for debugging
-        return { error: `Error updating user: ${updateError.message}` };
+        return encodedRedirect(
+          "error",
+          "/sign-up",
+          `Error updating user: ${updateError.message}`
+        );
       }
     } catch (err: any) {
       // Include the error message for better debugging
-      return {
-        error: `Error updating user: ${err?.message || "Unknown error"}`,
-      };
+      return encodedRedirect(
+        "error",
+        "/sign-up",
+        `Error updating user: ${err?.message || "Unknown error"}`
+      );
     }
   }
 
-  return {
-    success:
-      "Thanks for signing up! Please check your email for a verification link.",
-  };
+  return encodedRedirect(
+    "success",
+    "/sign-up",
+    "Thanks for signing up! Please check your email for a verification link."
+  );
 };
 
 export const signInAction = async (formData: FormData) => {

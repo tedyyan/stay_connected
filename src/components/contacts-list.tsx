@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
 
 type Contact = Database["public"]["Tables"]["contacts"]["Row"];
 
@@ -33,6 +34,8 @@ export default function ContactsList({ contacts, onEdit }: ContactsListProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const { toast } = useToast();
   const supabase = createClient();
 
   const handleDeleteClick = (contact: Contact) => {

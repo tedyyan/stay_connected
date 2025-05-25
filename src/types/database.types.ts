@@ -320,6 +320,32 @@ export interface Database {
           data?: Json | null;
         };
       };
+      user_api_keys: {
+        Row: {
+          id: string;
+          user_id: string;
+          sendgrid_api_key: string | null;
+          telnyx_api_key: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          sendgrid_api_key?: string | null;
+          telnyx_api_key?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          sendgrid_api_key?: string | null;
+          telnyx_api_key?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }
