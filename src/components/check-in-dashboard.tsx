@@ -20,7 +20,6 @@ import {
   PlusCircle,
   Users,
   History,
-  Settings,
   Mail,
   Phone,
   Edit,
@@ -35,7 +34,7 @@ import ContactForm from "@/components/contact-form";
 import ActivityHistory from "@/components/activity-history";
 import { Database } from "@/types/database.types";
 import { useSearchParams } from "next/navigation";
-import ApiKeysForm from "./api-keys-form";
+import NotificationHistory from "./notification-history";
 
 type Event = Database["public"]["Tables"]["events"]["Row"];
 type Contact = Database["public"]["Tables"]["contacts"]["Row"];
@@ -310,8 +309,8 @@ export default function CheckInDashboard({
           <TabsTrigger value="history">
             <History className="mr-2 h-4 w-4" /> History
           </TabsTrigger>
-          <TabsTrigger value="settings" className="hidden md:flex">
-            <Settings className="mr-2 h-4 w-4" /> Settings
+          <TabsTrigger value="notifications" className="hidden md:flex">
+            <Bell className="mr-2 h-4 w-4" /> Notifications
           </TabsTrigger>
         </TabsList>
 
@@ -365,8 +364,8 @@ export default function CheckInDashboard({
           <ActivityHistory userId={user.id} />
         </TabsContent>
 
-        <TabsContent value="settings">
-          <ApiKeysForm userId={user.id} />
+        <TabsContent value="notifications">
+          <NotificationHistory userId={user.id} />
         </TabsContent>
       </Tabs>
 

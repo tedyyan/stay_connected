@@ -15,7 +15,6 @@ import {
   Bell,
   Users,
   History,
-  Settings,
   Shield,
 } from "lucide-react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
@@ -212,11 +211,11 @@ export default function DashboardNavbar({
                   History
                 </Link>
                 <Link
-                  href="/dashboard?tab=settings"
-                  className={getNavLinkClassName("settings")}
+                  href="/dashboard?tab=notifications"
+                  className={getNavLinkClassName("notifications")}
                 >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
+                  <Bell className="mr-2 h-4 w-4" />
+                  Notifications
                 </Link>
               </>
             )}
