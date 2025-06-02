@@ -1,6 +1,21 @@
 /** @type {import('next').NextConfig} */
 
-const nextConfig = {};
+const nextConfig = {
+  webpack: (config, { isServer }) => {
+    // Ignore mobile directory
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ['**/mobile/**', '**/mobile', '**/node_modules/**']
+    };
+    
+    // Add module resolution to ignore mobile files
+    config.resolve.alias = {
+      ...config.resolve.alias,
+    };
+    
+    return config;
+  },
+};
 
 if (process.env.NEXT_PUBLIC_TEMPO) {
     nextConfig["experimental"] = {
