@@ -1,0 +1,14 @@
+# Ignore mobile React Native app during Vercel builds
+mobile/
+mobile/**
+
+# Ignore other non-web directories
+supabase/
+database_tables/
+edge-functions-backup/
+
+# Ignore development files
+*.log
+.env.local
+.DS_Store
+Thumbs.db 

@@ -1,0 +1,18 @@
+{
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "installCommand": "npm install",
+  "ignoreCommand": "npx vercel-ignore",
+  "functions": {
+    "app/api/**/*": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/check-inactivity", 
+      "schedule": "*/5 * * * *"
+    }
+  ]
+} 
