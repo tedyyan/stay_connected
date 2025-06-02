@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { createClient } from "../supabase/client";
 import { Database } from "@/types/database.types";
 
@@ -32,9 +31,6 @@ export default function ContactForm({
   const [name, setName] = useState(contact?.name || "");
   const [email, setEmail] = useState(contact?.email || "");
   const [phone, setPhone] = useState(contact?.phone || "");
-  const [notificationPreference, setNotificationPreference] = useState(
-    contact?.notification_preference || "email",
-  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
   const supabase = createClient();
@@ -63,7 +59,6 @@ export default function ContactForm({
             name,
             email,
             phone,
-            notification_preference: notificationPreference,
             updated_at: new Date().toISOString(),
           })
           .eq("id", contact.id);
@@ -84,7 +79,6 @@ export default function ContactForm({
           email,
           phone,
           deleted: false,
-          notification_preference: notificationPreference,
         });
         const { data, error } = await supabase
           .from("contacts")
@@ -94,7 +88,6 @@ export default function ContactForm({
             email,
             phone,
             deleted: false,
-            notification_preference: notificationPreference,
           })
           .select();
 
@@ -131,7 +124,7 @@ export default function ContactForm({
           <DialogDescription>
             {contact
               ? "Update contact information below."
-              : "Add a new contact who will be notified when you miss a check-in."}
+              : "Add a new contact who will be notified when you miss a check-in. Both email and SMS notifications will be sent if available."}
           </DialogDescription>
         </DialogHeader>
 
@@ -155,6 +148,9 @@ export default function ContactForm({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="john@example.com"
             />
+            <p className="text-xs text-muted-foreground">
+              Email notifications will be sent if provided
+            </p>
           </div>
 
           <div className="grid gap-2">
@@ -166,34 +162,9 @@ export default function ContactForm({
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+1234567890"
             />
-          </div>
-
-          <div className="grid gap-2">
-            <Label>Preferred Notification Method</Label>
-            <RadioGroup
-              value={notificationPreference}
-              onValueChange={setNotificationPreference}
-              className="flex flex-col space-y-1"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="email" id="notification-email" />
-                <Label htmlFor="notification-email" className="font-normal">
-                  Email
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="sms" id="notification-sms" />
-                <Label htmlFor="notification-sms" className="font-normal">
-                  SMS
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="both" id="notification-both" />
-                <Label htmlFor="notification-both" className="font-normal">
-                  Both Email and SMS
-                </Label>
-              </div>
-            </RadioGroup>
+            <p className="text-xs text-muted-foreground">
+              SMS notifications will be sent if provided
+            </p>
           </div>
 
           {formError && (

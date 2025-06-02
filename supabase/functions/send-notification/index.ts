@@ -1,10 +1,18 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import sgMail from "https://esm.sh/@sendgrid/mail@7.7.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Type definitions for better TypeScript support
+interface NotificationResult {
+  id: any;
+  type: string;
+  success: boolean;
+  error?: string;
+  deviceCount?: number;
 }
 
 serve(async (req) => {
@@ -15,25 +23,27 @@ serve(async (req) => {
   try {
     console.log('Starting notification processing...');
     
+    // Use service role key to bypass RLS for processing notifications
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      Deno.env.get('SERVICE_ROLE_KEY') ?? ''
     )
 
     // Initialize SendGrid and get environment variables
     const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || ''
     const TELNYX_API_KEY = Deno.env.get('TELNYX_API_KEY') || ''
+    const EXPO_ACCESS_TOKEN = Deno.env.get('EXPO_ACCESS_TOKEN') || ''
     const FROM_EMAIL = Deno.env.get('FROM_EMAIL') || 'notifications@stayconnected.app'
     const FROM_PHONE = Deno.env.get('FROM_PHONE') || ''
 
     console.log('Environment variables loaded:', {
       SENDGRID_API_KEY: SENDGRID_API_KEY ? '***' : 'not set',
       TELNYX_API_KEY: TELNYX_API_KEY ? '***' : 'not set',
+      EXPO_ACCESS_TOKEN: EXPO_ACCESS_TOKEN ? '***' : 'not set',
       FROM_EMAIL,
-      FROM_PHONE
+      FROM_PHONE,
+      SERVICE_ROLE_KEY: Deno.env.get('SERVICE_ROLE_KEY') ? '***' : 'not set'
     });
-
-    sgMail.setApiKey(SENDGRID_API_KEY)
 
     // Get pending notifications
     console.log('Fetching pending notifications...');
@@ -57,7 +67,7 @@ serve(async (req) => {
 
     console.log(`Found ${notifications?.length || 0} pending notifications`);
 
-    const results = []
+    const results: NotificationResult[] = []
     for (const notification of notifications || []) {
       console.log(`Processing notification ID ${notification.id}:`, {
         type: notification.notification_type,
@@ -67,49 +77,63 @@ serve(async (req) => {
 
       try {
         if (notification.notification_type === 'email') {
-          // Send email using SendGrid
-          const msg = {
-            to: notification.recipient,
-            from: FROM_EMAIL,
-            subject: `Inactivity Alert: ${notification.events.name}`,
-            text: notification.content,
-            html: `
-              <h2>Inactivity Alert</h2>
-              <p>${notification.content}</p>
-              <p>Event: ${notification.events.name}</p>
-              <hr>
-              <p><small>This is an automated message from Stay Connected.</small></p>
-            `
-          }
+          // Send email using SendGrid v3 API with correct format
+          const emailData = {
+            personalizations: [
+              {
+                to: [{ email: notification.recipient }],
+                subject: `Check-in Reminder: ${notification.events.name}`
+              }
+            ],
+            from: { email: FROM_EMAIL },
+            content: [
+              {
+                type: "text/plain",
+                value: notification.content
+              },
+              {
+                type: "text/html",
+                value: `
+                  <h2>Check-in Reminder</h2>
+                  <p>${notification.content}</p>
+                  <p>Event: ${notification.events.name}</p>
+                  <hr>
+                  <p><small>This is an automated message from Stay Connected.</small></p>
+                `
+              }
+            ]
+          };
 
           console.log('Preparing to send email:', {
             to: notification.recipient,
             from: FROM_EMAIL,
-            subject: `Inactivity Alert: ${notification.events.name}`
+            subject: `Check-in Reminder: ${notification.events.name}`
           });
 
-          try {
-            const response = await sgMail.send(msg)
-            console.log('SendGrid API Response:', {
-              statusCode: response[0]?.statusCode,
-              headers: response[0]?.headers,
-              body: response[0]?.body,
+          const emailResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(emailData),
+          });
+
+          if (!emailResponse.ok) {
+            const errorBody = await emailResponse.text();
+            console.error('SendGrid Error Response:', {
+              status: emailResponse.status,
+              statusText: emailResponse.statusText,
+              body: errorBody,
               timestamp: new Date().toISOString()
             });
-          } catch (error) {
-            console.error('SendGrid Error Details:', {
-              message: error.message,
-              code: error?.code,
-              response: {
-                statusCode: error?.response?.statusCode,
-                body: error?.response?.body,
-                headers: error?.response?.headers
-              },
-              timestamp: new Date().toISOString(),
-              stack: error.stack
-            });
-            throw error
+            throw new Error(`SendGrid API error: ${emailResponse.status} ${emailResponse.statusText}`);
           }
+
+          console.log('SendGrid API Response:', {
+            status: emailResponse.status,
+            timestamp: new Date().toISOString()
+          });
 
           results.push({
             id: notification.id,
@@ -172,6 +196,80 @@ serve(async (req) => {
             id: notification.id,
             type: 'sms',
             success: true
+          })
+        } else if (notification.notification_type === 'push') {
+          // Send push notification using Expo Push API
+          console.log('Preparing to send push notification:', {
+            recipient: notification.recipient,
+            eventName: notification.events?.name,
+            timestamp: new Date().toISOString()
+          });
+
+          // Get user's push tokens
+          const { data: pushTokens, error: tokenError } = await supabaseClient
+            .from('user_push_tokens')
+            .select('push_token, platform')
+            .eq('user_id', notification.events.user_id)
+
+          if (tokenError) {
+            console.error('Error fetching push tokens:', tokenError);
+            throw tokenError;
+          }
+
+          if (!pushTokens || pushTokens.length === 0) {
+            console.log('No push tokens found for user');
+            throw new Error('No push tokens found for user');
+          }
+
+          // Send push notification to all user's devices
+          const pushMessages = pushTokens.map(tokenData => ({
+            to: tokenData.push_token,
+            sound: 'default',
+            title: `Inactivity Alert: ${notification.events.name}`,
+            body: notification.content,
+            data: {
+              eventId: notification.event_id,
+              eventName: notification.events.name,
+              type: 'inactivity_alert'
+            },
+          }));
+
+          // Send to Expo Push API
+          const response = await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${EXPO_ACCESS_TOKEN}`,
+            },
+            body: JSON.stringify(pushMessages),
+          });
+
+          const responseData = await response.json();
+
+          if (!response.ok) {
+            console.error('Expo Push API Error:', {
+              status: response.status,
+              statusText: response.statusText,
+              body: responseData,
+              timestamp: new Date().toISOString()
+            });
+            throw new Error(`Expo Push API error: ${responseData.errors?.[0]?.message || 'Unknown error'}`);
+          }
+
+          console.log('Expo Push API Response:', {
+            status: response.status,
+            data: responseData,
+            messageCount: pushMessages.length,
+            timestamp: new Date().toISOString()
+          });
+
+          results.push({
+            id: notification.id,
+            type: 'push',
+            success: true,
+            deviceCount: pushMessages.length
           })
         }
 

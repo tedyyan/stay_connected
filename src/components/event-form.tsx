@@ -47,6 +47,7 @@ export default function EventForm({
   );
   const [inactivityValue, setInactivityValue] = useState("1");
   const [inactivityUnit, setInactivityUnit] = useState("day");
+  const [missedCheckinThreshold, setMissedCheckinThreshold] = useState(2);
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -54,17 +55,59 @@ export default function EventForm({
 
   useEffect(() => {
     if (event) {
-      // Parse the max_inactivity_time (e.g., "1 day", "2 weeks")
-      const match = event.max_inactivity_time.match(/^(\d+)\s+(\w+)$/);
-      if (match) {
-        setInactivityValue(match[1]);
-        setInactivityUnit(
-          match[2].endsWith("s") ? match[2].slice(0, -1) : match[2],
-        );
+      console.log('Loading event data:', {
+        eventId: event.id,
+        eventName: event.name,
+        checkInFrequency: (event as any).check_in_frequency,
+        maxInactivityTime: event.max_inactivity_time,
+        eventContacts: event.contacts,
+        eventContactsType: typeof event.contacts,
+        eventContactsLength: Array.isArray(event.contacts) ? event.contacts.length : 'not array'
+      });
+      
+      // Parse the check_in_frequency - handle both text and PostgreSQL interval formats
+      let parsedValue = "1";
+      let parsedUnit = "day";
+      
+      const intervalToCheck = (event as any).check_in_frequency || event.max_inactivity_time;
+      
+      if (intervalToCheck) {
+        // Handle PostgreSQL interval format like "00:05:00" (HH:MM:SS)
+        const timeMatch = intervalToCheck.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1], 10);
+          const minutes = parseInt(timeMatch[2], 10);
+          const seconds = parseInt(timeMatch[3], 10);
+          
+          if (hours > 0) {
+            parsedValue = hours.toString();
+            parsedUnit = "hour";
+          } else if (minutes > 0) {
+            parsedValue = minutes.toString();
+            parsedUnit = "minute";
+          } else if (seconds > 0) {
+            parsedValue = seconds.toString();
+            parsedUnit = "second";
+          }
+        } else {
+          // Handle text format like "1 day", "2 weeks", etc.
+          const match = intervalToCheck.match(/^(\d+)\s+(\w+)$/);
+          if (match) {
+            parsedValue = match[1];
+            parsedUnit = match[2].endsWith("s") ? match[2].slice(0, -1) : match[2];
+          }
+        }
       }
+      
+      setInactivityValue(parsedValue);
+      setInactivityUnit(parsedUnit);
+
+      // Set missed check-in threshold (default to 2 if not available)
+      setMissedCheckinThreshold((event as any).missed_checkin_threshold || 2);
 
       // Set selected contacts
       const contactIds = (event.contacts as { id: string }[]).map((c) => c.id);
+      console.log('Setting selected contacts:', contactIds);
       setSelectedContacts(contactIds);
     }
   }, [event]);
@@ -86,42 +129,73 @@ export default function EventForm({
 
     try {
       const maxInactivityTime = `${inactivityValue} ${inactivityUnit}${parseInt(inactivityValue) > 1 ? "s" : ""}`;
+      
+      console.log('Form submission data:', {
+        inactivityValue,
+        inactivityUnit,
+        maxInactivityTime,
+        eventId: event?.id,
+        isEditing: !!event
+      });
 
       if (event) {
         // Update existing event
+        const updateData: any = {
+          name,
+          memo,
+          notification_content: notificationContent,
+          check_in_frequency: maxInactivityTime,
+          updated_at: new Date().toISOString(),
+          contacts: [], // Maintain empty array for the contacts column
+        };
+        
+        // Only include missed_checkin_threshold if the column exists
+        try {
+          updateData.missed_checkin_threshold = missedCheckinThreshold;
+        } catch (e) {
+          console.log('missed_checkin_threshold column not available yet');
+        }
+
         const { error: updateError } = await supabase
           .from("events")
-          .update({
-            name,
-            memo,
-            notification_content: notificationContent,
-            max_inactivity_time: maxInactivityTime,
-            updated_at: new Date().toISOString(),
-            contacts: [], // Maintain empty array for the contacts column
-          })
+          .update(updateData)
           .eq("id", event.id);
 
         if (updateError) throw updateError;
 
-        // Update event_contacts
-        // First, delete existing associations
-        const { error: deleteError } = await supabase
-          .from("event_contacts")
-          .delete()
-          .eq("event_id", event.id);
+        // Update event_contacts safely - remove contacts not selected
+        if (selectedContacts.length > 0) {
+          const { error: deleteError } = await supabase
+            .from("event_contacts")
+            .delete()
+            .eq("event_id", event.id)
+            .not("contact_id", "in", `(${selectedContacts.join(",")})`);
 
-        if (deleteError) throw deleteError;
+          if (deleteError) throw deleteError;
+        } else {
+          // If no contacts selected, delete all
+          const { error: deleteAllError } = await supabase
+            .from("event_contacts")
+            .delete()
+            .eq("event_id", event.id);
 
-        // Then, create new associations
+          if (deleteAllError) throw deleteAllError;
+        }
+
+        // Add new contacts (ignore duplicates with ON CONFLICT DO NOTHING)
         if (selectedContacts.length > 0) {
           const eventContactsToInsert = selectedContacts.map(contactId => ({
             event_id: event.id,
             contact_id: contactId
           }));
 
+          // Use upsert to handle duplicates gracefully
           const { error: insertError } = await supabase
             .from("event_contacts")
-            .insert(eventContactsToInsert);
+            .upsert(eventContactsToInsert, { 
+              onConflict: 'event_id,contact_id',
+              ignoreDuplicates: true 
+            });
 
           if (insertError) throw insertError;
         }
@@ -136,18 +210,27 @@ export default function EventForm({
       } else {
         // Create new event
         console.log('Creating new event with user_id:', userId);
+        const insertData: any = {
+          user_id: userId,
+          name,
+          memo,
+          notification_content: notificationContent,
+          check_in_frequency: maxInactivityTime,
+          last_check_in: new Date().toISOString(),
+          status: "running",
+          contacts: [], // Add default empty array for the contacts column
+        };
+        
+        // Only include missed_checkin_threshold if the column exists
+        try {
+          insertData.missed_checkin_threshold = missedCheckinThreshold;
+        } catch (e) {
+          console.log('missed_checkin_threshold column not available yet');
+        }
+
         const { data: newEvent, error: createError } = await supabase
           .from("events")
-          .insert({
-            user_id: userId,
-            name,
-            memo,
-            notification_content: notificationContent,
-            max_inactivity_time: maxInactivityTime,
-            last_check_in: new Date().toISOString(),
-            status: "running",
-            contacts: [], // Add default empty array for the contacts column
-          })
+          .insert(insertData)
           .select()
           .single();
 
@@ -208,10 +291,22 @@ export default function EventForm({
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{event ? "Edit" : "Create"} Check-In</DialogTitle>
-          <DialogDescription>
-            {event
-              ? "Update your check-in details below."
-              : "Set up a new check-in to monitor your activity."}
+          <DialogDescription asChild>
+            <div className="space-y-2">
+              <div>
+                {event
+                  ? "Update your check-in details below."
+                  : "Set up a new check-in to monitor your activity."}
+              </div>
+              <div className="text-sm bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <div className="font-medium text-blue-900 mb-1">How it works:</div>
+                <ul className="space-y-1 text-blue-800">
+                  <li>• You'll need to check in at your specified frequency</li>
+                  <li>• If you miss check-ins, contacts will be automatically notified</li>
+                  <li>• Use your mobile app or web dashboard to check in quickly</li>
+                </ul>
+              </div>
+            </div>
           </DialogDescription>
         </DialogHeader>
 
@@ -260,6 +355,34 @@ export default function EventForm({
                 </SelectContent>
               </Select>
             </div>
+            <p className="text-xs text-muted-foreground">
+              How often you need to check in to confirm you're safe
+            </p>
+            <p className="text-xs text-blue-600">
+              Current: {inactivityValue} {inactivityUnit}{parseInt(inactivityValue) > 1 ? "s" : ""}
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="threshold">Alert Trigger</Label>
+            <Select 
+              value={missedCheckinThreshold.toString()} 
+              onValueChange={(value) => setMissedCheckinThreshold(parseInt(value))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select threshold" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">After 1 missed check-in</SelectItem>
+                <SelectItem value="2">After 2 missed check-ins in a row</SelectItem>
+                <SelectItem value="3">After 3 missed check-ins in a row</SelectItem>
+                <SelectItem value="4">After 4 missed check-ins in a row</SelectItem>
+                <SelectItem value="5">After 5 missed check-ins in a row</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Contacts will be notified after this many consecutive missed check-ins
+            </p>
           </div>
 
           <div className="grid gap-2">

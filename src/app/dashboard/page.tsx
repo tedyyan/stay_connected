@@ -25,12 +25,47 @@ export default async function Dashboard() {
   const isAdmin = userData?.is_admin || false;
 
   // For regular users, fetch their events and contacts
-  const { data: events } = await supabase
+  const { data: eventsData } = await supabase
     .from("events")
-    .select("*")
+    .select(`
+      *,
+      event_contacts (
+        contact_id,
+        contacts (
+          id,
+          name,
+          email,
+          phone
+        )
+      )
+    `)
     .eq("user_id", user.id)
     .eq("deleted", false)
     .order("created_at", { ascending: false });
+
+  // Transform the events data to include contacts in the expected format
+  const events = eventsData?.map(event => ({
+    ...event,
+    contacts: event.event_contacts?.map((ec: any) => ({ id: ec.contacts.id })) || []
+  })) || [];
+
+  // Fetch actual check-in status using the same function as mobile app
+  const { data: checkinStatuses, error: checkinError } = await supabase.rpc(
+    'get_user_checkin_status',
+    { user_id_param: user.id }
+  );
+
+  // Merge the check-in status with events data
+  const eventsWithCheckins = events?.map(event => {
+    const checkinStatus = checkinStatuses?.find((status: any) => status.event_id === event.id);
+    return {
+      ...event,
+      // Override last_check_in with actual last check-in if available
+      last_check_in: checkinStatus?.last_checkin || event.last_check_in,
+      // Add additional check-in info
+      checkinStatus: checkinStatus
+    };
+  }) || [];
 
   const { data: contacts } = await supabase
     .from("contacts")
@@ -48,7 +83,7 @@ export default async function Dashboard() {
             <AdminDashboard user={user} />
           ) : (
             <CheckInDashboard
-              initialEvents={events || []}
+              initialEvents={eventsWithCheckins}
               initialContacts={contacts || []}
               user={user}
             />

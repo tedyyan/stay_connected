@@ -20,7 +20,6 @@ export interface Database {
           created_at: string;
           updated_at: string;
           deleted: boolean;
-          notification_preference: string;
         };
         Insert: {
           id?: string;
@@ -32,7 +31,6 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           deleted?: boolean;
-          notification_preference?: string;
         };
         Update: {
           id?: string;
@@ -44,7 +42,6 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           deleted?: boolean;
-          notification_preference?: string;
         };
       };
       events: {
@@ -63,6 +60,8 @@ export interface Database {
           last_trigger_time: string | null;
           muted: boolean;
           status: string;
+          missed_checkin_threshold: number;
+          notification_interval: number;
         };
         Insert: {
           id?: string;
@@ -79,6 +78,8 @@ export interface Database {
           last_trigger_time?: string | null;
           muted?: boolean;
           status?: string;
+          missed_checkin_threshold?: number;
+          notification_interval?: number;
         };
         Update: {
           id?: string;
@@ -95,6 +96,8 @@ export interface Database {
           last_trigger_time?: string | null;
           muted?: boolean;
           status?: string;
+          missed_checkin_threshold?: number;
+          notification_interval?: number;
         };
       };
       notification_logs: {
@@ -107,6 +110,7 @@ export interface Database {
           sent_at: string;
           status: string;
           error_message: string | null;
+          notification_category: string;
         };
         Insert: {
           id?: string;
@@ -117,6 +121,7 @@ export interface Database {
           sent_at?: string;
           status: string;
           error_message?: string | null;
+          notification_category?: string;
         };
         Update: {
           id?: string;
@@ -127,6 +132,7 @@ export interface Database {
           sent_at?: string;
           status?: string;
           error_message?: string | null;
+          notification_category?: string;
         };
       };
       activity_logs: {
@@ -342,6 +348,29 @@ export interface Database {
           user_id?: string;
           sendgrid_api_key?: string | null;
           telnyx_api_key?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      event_contacts: {
+        Row: {
+          id: string;
+          event_id: string;
+          contact_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_id: string;
+          contact_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string;
+          contact_id?: string;
           created_at?: string;
           updated_at?: string;
         };

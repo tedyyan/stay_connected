@@ -8,6 +8,7 @@ export const signUpAction = async (formData: FormData) => {
   const email = formData.get("email")?.toString();
   const password = formData.get("password")?.toString();
   const fullName = formData.get("full_name")?.toString() || "";
+  const phone = formData.get("phone")?.toString();
   const supabase = await createClient();
 
   if (!email || !password) {
@@ -15,6 +16,14 @@ export const signUpAction = async (formData: FormData) => {
       "error",
       "/sign-up",
       "Email and password are required",
+    );
+  }
+
+  if (!phone) {
+    return encodedRedirect(
+      "error",
+      "/sign-up",
+      "Phone number is required",
     );
   }
 
@@ -28,6 +37,7 @@ export const signUpAction = async (formData: FormData) => {
       data: {
         full_name: fullName,
         email: email,
+        phone: phone,
       },
     },
   });
@@ -36,39 +46,8 @@ export const signUpAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-up", error.message);
   }
 
-  if (user) {
-    try {
-      // Use upsert instead of insert to handle potential conflicts
-      const { error: updateError } = await supabase.from("users").upsert(
-        {
-          id: user.id,
-          user_id: user.id,
-          name: fullName,
-          full_name: fullName,
-          email: email,
-          token_identifier: user.id,
-          created_at: new Date().toISOString(),
-        },
-        { onConflict: "id" },
-      );
-
-      if (updateError) {
-        // Log the specific error for debugging
-        return encodedRedirect(
-          "error",
-          "/sign-up",
-          `Error updating user: ${updateError.message}`
-        );
-      }
-    } catch (err: any) {
-      // Include the error message for better debugging
-      return encodedRedirect(
-        "error",
-        "/sign-up",
-        `Error updating user: ${err?.message || "Unknown error"}`
-      );
-    }
-  }
+  // The database trigger will automatically create the public.users record
+  // No need for manual user creation anymore
 
   return encodedRedirect(
     "success",

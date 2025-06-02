@@ -51,6 +51,20 @@ serve(async (req) => {
       throw new Error(`Failed to update check-in time: ${updateError.message}`);
     }
 
+    // Clear any pending notifications for this event since user has checked in
+    const { error: clearNotificationsError } = await supabase
+      .from("notification_logs")
+      .update({ status: "cancelled" })
+      .eq("event_id", eventId)
+      .eq("status", "pending");
+
+    if (clearNotificationsError) {
+      console.error("Failed to clear pending notifications:", clearNotificationsError);
+      // Don't throw error, this is not critical for check-in success
+    } else {
+      console.log("Cleared pending notifications for event:", eventId);
+    }
+
     // Log the activity
     const { data: activityLog, error: activityError } = await supabase
       .from("activity_logs")

@@ -74,6 +74,20 @@ export default async function Signup(props: {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="phone" className="text-sm font-medium">
+                  Phone Number
+                </Label>
+                <Input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  placeholder="+1234567890"
+                  required
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">
                   Password
                 </Label>

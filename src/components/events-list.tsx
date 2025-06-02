@@ -92,7 +92,7 @@ export default function EventsList({
     try {
       const { error } = await supabase
         .from("events")
-        .update({ deleted: true, status: "deleted" })
+        .update({ deleted: true })
         .eq("id", eventToDelete.id);
 
       if (error) throw error;
@@ -142,10 +142,10 @@ export default function EventsList({
     }
   };
 
-  const handleNotifyContacts = async (event: Event) => {
+  const handleNotifyMyself = async (event: Event) => {
     setIsNotifying(prev => ({ ...prev, [event.id]: true }));
     try {
-      console.log('Client: Starting notification process');
+      console.log('Client: Starting self notification process');
       
       // Check if user is signed in
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -159,20 +159,20 @@ export default function EventsList({
         console.log('Client: No user found, redirecting to sign in');
         toast({
           title: "Authentication Required",
-          description: "Please sign in to notify contacts.",
+          description: "Please sign in to send notifications to yourself.",
           variant: "destructive",
         });
         router.push('/sign-in');
         return;
       }
 
-      console.log('Client: Making API request for event:', event.id);
-      const response = await fetch('/api/notify', {
+      console.log('Client: Making API request for self notification, event:', event.id);
+      const response = await fetch('/api/notify-myself', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ eventIds: [event.id], force: true }),
+        body: JSON.stringify({ eventId: event.id }),
         credentials: 'include',
       });
 
@@ -191,25 +191,23 @@ export default function EventsList({
           router.push('/sign-in');
           return;
         }
-        throw new Error(errorData.error || 'Failed to process notification request');
+        throw new Error(errorData.error || 'Failed to send notification');
       }
 
       const data = await response.json();
       console.log('Client: API response data:', data);
       
       if (!data?.success) {
-        throw new Error(data?.error || 'Failed to process notification request');
+        throw new Error(data?.error || 'Failed to send notification');
       }
 
-      console.log('Client: Notification successful:', {
-        processedCount: data.processed?.length
-      });
+      console.log('Client: Self notification successful');
 
       toast({
-        title: "✅ Notifications Sent Successfully",
-        description: `Contacts have been notified for event "${event.name}". ${data.processed?.length || 0} notification${data.processed?.length === 1 ? '' : 's'} processed.`,
+        title: "✅ Check-in Reminder Sent",
+        description: `Reminder sent to your email and phone for "${event.name}".`,
         variant: "default",
-        duration: 5000, // Show for 5 seconds
+        duration: 5000,
       });
 
       // Update the UI to show the notification was sent
@@ -218,10 +216,10 @@ export default function EventsList({
         .insert({
           user_id: user.id,
           event_id: event.id,
-          action: "manual_notification_sent",
+          action: "self_notification_sent",
           details: {
             event_name: event.name,
-            notifications_sent: data.processed?.length
+            notification_type: "self_reminder"
           },
         });
 
@@ -229,9 +227,9 @@ export default function EventsList({
         console.error('Error logging notification activity:', logError);
       }
     } catch (error) {
-      console.error("Client: Error in notification process:", error);
+      console.error("Client: Error in self notification process:", error);
       toast({
-        title: "Failed to notify contacts",
+        title: "Failed to send reminder",
         description: error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
       });
@@ -241,10 +239,22 @@ export default function EventsList({
   };
 
   // Helper function to parse PostgreSQL interval to milliseconds
-  const parseInterval = (interval: string): number => {
-    // Simple parsing for common formats like '1 week', '2 days', etc.
+  const parseInterval = (interval: string | null | undefined): number => {
+    // Handle null/undefined intervals
+    if (!interval) return 60 * 60 * 1000; // Default to 1 hour
+    
+    // Handle PostgreSQL interval format like "00:05:00" (HH:MM:SS)
+    const timeMatch = interval.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+    if (timeMatch) {
+      const hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      const seconds = parseInt(timeMatch[3], 10);
+      return (hours * 60 * 60 + minutes * 60 + seconds) * 1000;
+    }
+
+    // Handle text format like '1 week', '2 days', etc.
     const match = interval.match(/^(\d+)\s+(\w+)$/);
-    if (!match) return 0;
+    if (!match) return 60 * 60 * 1000; // Default to 1 hour
 
     const value = parseInt(match[1], 10);
     const unit = match[2].toLowerCase();
@@ -279,7 +289,7 @@ export default function EventsList({
     }
 
     if (event.status === "triggered") {
-      return { status: "triggered", label: "Triggered", color: "bg-red-500" };
+      return { status: "triggered", label: "TRIGGERED", color: "bg-red-500" };
     }
 
     if (event.status === "deleted" || event.deleted) {
@@ -287,40 +297,97 @@ export default function EventsList({
     }
 
     const lastCheckIn = parseISO(event.last_check_in);
-    const maxInactivityMs = parseInterval(event.max_inactivity_time);
-    const triggerTime = addMilliseconds(lastCheckIn, maxInactivityMs);
     const now = new Date();
+    
+    // Calculate time since last check-in
+    const timeSinceLastCheckIn = now.getTime() - lastCheckIn.getTime();
+    
+    // Use check_in_frequency instead of max_inactivity_time
+    const checkInFrequencyMs = parseInterval((event as any).check_in_frequency || event.max_inactivity_time);
+    
+    // Calculate next check-in due time for display
+    const nextCheckInDue = new Date(lastCheckIn.getTime() + checkInFrequencyMs);
+    const timeUntilNextCheckIn = nextCheckInDue.getTime() - now.getTime();
+    
+    // For progress bar, use check_in_frequency
+    const totalDuration = checkInFrequencyMs;
+    const elapsed = timeSinceLastCheckIn;
+    const percentElapsed = Math.min(100, Math.floor((elapsed / totalDuration) * 100));
 
-    // Calculate percentage of time elapsed
-    const totalDuration = maxInactivityMs;
-    const elapsed = now.getTime() - lastCheckIn.getTime();
-    const percentElapsed = Math.min(
-      100,
-      Math.floor((elapsed / totalDuration) * 100),
-    );
-
-    if (percentElapsed >= 90) {
+    // Check if overdue
+    if (timeUntilNextCheckIn <= 0) {
+      const overdueDuration = Math.abs(timeUntilNextCheckIn);
+      
+      // Format overdue time appropriately
+      const overdueHours = Math.floor(overdueDuration / (1000 * 60 * 60));
+      const overdueMinutes = Math.floor((overdueDuration % (1000 * 60 * 60)) / (1000 * 60));
+      
+      let overdueLabel = "";
+      if (overdueHours > 0) {
+        overdueLabel = `OVERDUE by ${overdueHours}h`;
+        if (overdueMinutes > 0) {
+          overdueLabel += ` ${overdueMinutes}m`;
+        }
+      } else {
+        overdueLabel = `OVERDUE by ${overdueMinutes}m`;
+      }
+      
       return {
-        status: "critical",
-        label: "Critical",
+        status: "overdue",
+        label: overdueLabel,
         color: "bg-red-500",
         percent: percentElapsed,
       };
-    } else if (percentElapsed >= 75) {
-      return {
-        status: "warning",
-        label: "Warning",
-        color: "bg-yellow-500",
-        percent: percentElapsed,
-      };
-    } else {
-      return {
-        status: "normal",
-        label: "Normal",
-        color: "bg-green-500",
-        percent: percentElapsed,
-      };
     }
+    
+    // Calculate time until due
+    const hoursUntilDue = Math.floor(timeUntilNextCheckIn / (1000 * 60 * 60));
+    const minutesUntilDue = Math.floor((timeUntilNextCheckIn % (1000 * 60 * 60)) / (1000 * 60));
+    
+    // Show different colors based on urgency
+    let color = "bg-green-500";
+    let label = "";
+    
+    if (hoursUntilDue <= 0 && minutesUntilDue > 0) {
+      // Less than an hour
+      label = `Due in ${minutesUntilDue}m`;
+      color = "bg-yellow-500";
+    } else if (hoursUntilDue < 1 && minutesUntilDue <= 0) {
+      // Less than a minute
+      const secondsUntilDue = Math.floor((timeUntilNextCheckIn % (1000 * 60)) / 1000);
+      label = `Due in ${secondsUntilDue}s`;
+      color = "bg-red-400";
+    } else if (hoursUntilDue <= 24) {
+      // Less than 24 hours
+      if (hoursUntilDue === 0) {
+        label = `Due in ${minutesUntilDue}m`;
+      } else if (minutesUntilDue > 0) {
+        label = `Due in ${hoursUntilDue}h ${minutesUntilDue}m`;
+      } else {
+        label = `Due in ${hoursUntilDue}h`;
+      }
+      color = hoursUntilDue <= 6 ? "bg-yellow-500" : "bg-green-500";
+    } else {
+      // More than 24 hours
+      const daysUntilDue = Math.floor(hoursUntilDue / 24);
+      const remainingHours = hoursUntilDue % 24;
+      
+      if (daysUntilDue >= 1) {
+        label = remainingHours > 0 
+          ? `Due in ${daysUntilDue}d ${remainingHours}h`
+          : `Due in ${daysUntilDue}d`;
+      } else {
+        label = `Due in ${hoursUntilDue}h`;
+      }
+      color = "bg-green-500";
+    }
+
+    return {
+      status: "active",
+      label: label,
+      color: color,
+      percent: percentElapsed,
+    };
   };
 
   const getContactNames = (contactIds: { id: string }[]) => {
@@ -373,8 +440,8 @@ export default function EventsList({
           event.contacts as { id: string }[],
         );
         const lastCheckIn = parseISO(event.last_check_in);
-        const maxInactivityMs = parseInterval(event.max_inactivity_time);
-        const triggerTime = addMilliseconds(lastCheckIn, maxInactivityMs);
+        const checkInFrequencyMs = parseInterval((event as any).check_in_frequency || event.max_inactivity_time);
+        const triggerTime = addMilliseconds(lastCheckIn, checkInFrequencyMs);
 
         return (
           <Card key={event.id} className="overflow-hidden">
@@ -395,9 +462,9 @@ export default function EventsList({
                           ? "outline"
                           : event.status === "triggered"
                             ? "destructive"
-                            : eventStatus.status === "critical"
+                            : eventStatus.status === "overdue"
                               ? "destructive"
-                              : eventStatus.status === "warning"
+                              : eventStatus.color === "bg-yellow-500"
                                 ? "default"
                                 : "secondary"
                       }
@@ -447,7 +514,7 @@ export default function EventsList({
                       Check-in frequency:
                     </span>
                     <span className="ml-1 font-medium">
-                      {event.max_inactivity_time}
+                      {(event as any).check_in_frequency || event.max_inactivity_time || 'Not set'}
                     </span>
                   </div>
                   <div className="flex items-center text-sm">
@@ -491,7 +558,7 @@ export default function EventsList({
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => handleNotifyContacts(event)}
+                  onClick={() => handleNotifyMyself(event)}
                   disabled={isNotifying[event.id]}
                 >
                   {isNotifying[event.id] ? (
@@ -502,7 +569,7 @@ export default function EventsList({
                   ) : (
                     <>
                       <Bell className="mr-2 h-4 w-4" />
-                      Notify Contacts
+                      Notify Myself
                     </>
                   )}
                 </Button>

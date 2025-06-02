@@ -160,14 +160,21 @@ export default function CheckInDashboard({
   const handleCheckIn = async (eventId: string) => {
     setIsLoading(true);
     try {
+      console.log('Attempting check-in for event:', eventId);
+      
       const { data, error } = await supabase.functions.invoke(
-        "supabase-functions-check-in",
+        "check-in",
         {
           body: { eventId },
         },
       );
 
-      if (error) throw error;
+      console.log('Check-in response:', { data, error });
+
+      if (error) {
+        console.error('Check-in function error:', error);
+        throw error;
+      }
 
       // Update the local state
       setEvents((prev) =>
@@ -184,6 +191,13 @@ export default function CheckInDashboard({
       );
     } catch (error) {
       console.error("Error checking in:", error);
+      console.error("Error details:", {
+        name: (error as any)?.name,
+        message: (error as any)?.message,
+        stack: (error as any)?.stack,
+        context: (error as any)?.context || 'No context available'
+      });
+      
       // Use a more user-friendly error message
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -217,9 +231,40 @@ export default function CheckInDashboard({
     setShowContactForm(true);
   };
 
-  const handleCloseEventForm = () => {
+  const handleCloseEventForm = async () => {
     setShowEventForm(false);
     setEditingEvent(null);
+    
+    // Refresh events to get updated contact associations
+    try {
+      const { data: eventsData } = await supabase
+        .from("events")
+        .select(`
+          *,
+          event_contacts (
+            contact_id,
+            contacts (
+              id,
+              name,
+              email,
+              phone
+            )
+          )
+        `)
+        .eq("user_id", user.id)
+        .eq("deleted", false)
+        .order("created_at", { ascending: false });
+
+      // Transform the events data to include contacts in the expected format
+      const refreshedEvents = eventsData?.map(event => ({
+        ...event,
+        contacts: event.event_contacts?.map((ec: any) => ({ id: ec.contacts.id })) || []
+      })) || [];
+      
+      setEvents(refreshedEvents);
+    } catch (error) {
+      console.error("Error refreshing events:", error);
+    }
   };
 
   const handleCloseContactForm = () => {

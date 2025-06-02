@@ -18,8 +18,8 @@ import {
   Settings,
   Shield,
 } from "lucide-react";
-import { useRouter, usePathname } from "next/navigation";
-import { useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +42,7 @@ export default function DashboardNavbar({
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
   const [password, setPassword] = useState("");
@@ -51,6 +52,30 @@ export default function DashboardNavbar({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [currentTab, setCurrentTab] = useState<string | null>(null);
+
+  // Handle tab state on client side to avoid hydration mismatch
+  useEffect(() => {
+    setCurrentTab(searchParams.get("tab"));
+  }, [searchParams]);
+
+  const getNavLinkClassName = (tabName: string | null) => {
+    const isActive = pathname === "/dashboard" && currentTab === tabName;
+    return `flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+      isActive 
+        ? "bg-blue-50 text-blue-700" 
+        : "text-gray-600 hover:text-blue-600"
+    }`;
+  };
+
+  const getCheckInsClassName = () => {
+    const isActive = pathname === "/dashboard" && !currentTab;
+    return `flex items-center px-3 py-2 text-sm font-medium rounded-md ${
+      isActive 
+        ? "bg-blue-50 text-blue-700" 
+        : "text-gray-600 hover:text-blue-600"
+    }`;
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,28 +192,28 @@ export default function DashboardNavbar({
               <>
                 <Link
                   href="/dashboard"
-                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${pathname === "/dashboard" && typeof window !== "undefined" && !new URL(window.location.href).searchParams.get("tab") ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:text-blue-600"}`}
+                  className={getCheckInsClassName()}
                 >
                   <Bell className="mr-2 h-4 w-4" />
                   Check-Ins
                 </Link>
                 <Link
                   href="/dashboard?tab=contacts"
-                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${pathname === "/dashboard" && typeof window !== "undefined" && new URL(window.location.href).searchParams.get("tab") === "contacts" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:text-blue-600"}`}
+                  className={getNavLinkClassName("contacts")}
                 >
                   <Users className="mr-2 h-4 w-4" />
                   Contacts
                 </Link>
                 <Link
                   href="/dashboard?tab=history"
-                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${pathname === "/dashboard" && typeof window !== "undefined" && new URL(window.location.href).searchParams.get("tab") === "history" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:text-blue-600"}`}
+                  className={getNavLinkClassName("history")}
                 >
                   <History className="mr-2 h-4 w-4" />
                   History
                 </Link>
                 <Link
                   href="/dashboard?tab=settings"
-                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${pathname === "/dashboard" && typeof window !== "undefined" && new URL(window.location.href).searchParams.get("tab") === "settings" ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:text-blue-600"}`}
+                  className={getNavLinkClassName("settings")}
                 >
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
