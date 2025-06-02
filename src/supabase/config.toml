@@ -1,3 +1,0 @@
-[functions]
-[functions.payments-webhook]
-verify_jwt = false

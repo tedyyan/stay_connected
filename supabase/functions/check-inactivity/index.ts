@@ -1,10 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+console.log("Edge Function starting...");
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 };
 
 const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY") || "";
@@ -22,17 +25,22 @@ console.log('Environment variables loaded:', {
 });
 
 serve(async (req) => {
+  console.log(`Received ${req.method} request from ${req.headers.get('origin')}`);
+  console.log('Headers:', Object.fromEntries(req.headers.entries()));
+  
   // Handle CORS preflight request
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders, status: 204 });
+    return new Response(null, {
+      headers: corsHeaders,
+      status: 204
+    });
   }
 
   try {
     console.log('Starting inactivity check - detecting overdue events...');
-    
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") || "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
     );
 
     const results = {
@@ -45,114 +53,209 @@ serve(async (req) => {
     // Phase 1: Log user reminders for overdue check-ins
     console.log('Phase 1: Checking for events needing user reminders...');
     try {
-      const { data: eventsNeedingReminders, error: remindersError } = await supabase.rpc('get_events_needing_user_reminders');
-      
+      const { data: eventsNeedingReminders, error: remindersError } = await supabase
+        .rpc('get_events_needing_user_reminders');
+
       if (remindersError) {
         console.error('Error getting events needing reminders:', remindersError);
-        results.errors.push({ phase: 'user_reminders', error: remindersError.message });
+        results.errors.push({
+          phase: 'user_reminders',
+          error: remindersError.message
+        });
       } else {
         console.log(`Found ${eventsNeedingReminders?.length || 0} events needing user reminders`);
         
         for (const event of eventsNeedingReminders || []) {
-          console.log(`Logging user reminder for event: ${event.name} (${event.id})`);
+          console.log(`Processing user reminder for event: ${event.name} (${event.id})`);
+
+          // Calculate missed intervals for this event
+          const lastCheckin = event.last_checkin || event.created_at;
+          const checkInFrequency = event.check_in_frequency || '1 hour';
+          const missedThreshold = event.missed_checkin_threshold || 5;
+
+          // Parse check_in_frequency interval to minutes
+          let frequencyMinutes = 60; // default to 1 hour
+          if (typeof checkInFrequency === 'string') {
+            if (checkInFrequency.includes('minute')) {
+              frequencyMinutes = parseInt(checkInFrequency) || 60;
+            } else if (checkInFrequency.includes('hour')) {
+              frequencyMinutes = (parseInt(checkInFrequency) || 1) * 60;
+            } else if (checkInFrequency.includes('day')) {
+              frequencyMinutes = (parseInt(checkInFrequency) || 1) * 60 * 24;
+            }
+          }
           
-          // Insert push notification request
-          if (event.user_id) {
-            try {
-              const { error: pushLogError } = await supabase
-                .from('notification_logs')
-                .insert({
-                  event_id: event.id,
-                  notification_type: 'push',
-                  recipient: event.user_id, // For push, recipient is user_id
-                  content: `Time to check in for "${event.name}". Please confirm you're safe.`,
-                  status: 'pending',
-                  notification_category: 'user_reminder'
-                });
+          const minutesSinceLastCheckin = (new Date().getTime() - new Date(lastCheckin).getTime()) / (1000 * 60);
+          const missedIntervals = Math.floor(minutesSinceLastCheckin / frequencyMinutes);
+          const remindersLeft = missedThreshold - missedIntervals;
+          
+          console.log(`Event ${event.name}: missed_intervals=${missedIntervals}, threshold=${missedThreshold}, reminders_left=${remindersLeft}`);
 
-              if (pushLogError) {
-                console.error(`Error logging push notification for event ${event.id}:`, pushLogError);
-                results.errors.push({ event_id: event.id, type: 'push', error: pushLogError.message });
-              } else {
-                results.userRemindersLogged.push({ event_id: event.id, type: 'push', success: true });
-              }
-            } catch (error) {
-              console.error(`Error logging push notification for event ${event.id}:`, error);
-              results.errors.push({ event_id: event.id, type: 'push', error: error.message });
+          // Only send reminders if we are in the reminder phase (1 <= missedIntervals < threshold)
+          if (missedIntervals >= 1 && missedIntervals < missedThreshold) {
+            
+            // Check if we've already sent a reminder for this missed interval
+            const { data: existingReminders, error: reminderCheckError } = await supabase
+              .from('notification_logs')
+              .select('id')
+              .eq('event_id', event.id)
+              .eq('notification_category', 'user_reminder')
+              .ilike('content', `Reminder #${missedIntervals}:%`)
+              .limit(1);
+
+            if (reminderCheckError) {
+              console.error(`Error checking existing reminders for event ${event.id}:`, reminderCheckError);
+            } else if (existingReminders && existingReminders.length > 0) {
+              console.log(`Reminder #${missedIntervals} already sent for event ${event.name}, skipping`);
+              continue; // Skip this event, reminder already sent for this interval
             }
-          }
 
-          // Insert email notification request
-          if (event.user_email) {
-            try {
-              const content = event.notification_content || 
-                `Time to check in for "${event.name}". Please open the Stay Connected app and confirm you are safe.`;
+            console.log(`Sending Reminder #${missedIntervals} for event ${event.name}`);
+            
+            // Insert push notification request
+            if (event.user_id) {
+              try {
+                const reminderContent = `Reminder #${missedIntervals}: Time to check in for "${event.name}". ${remindersLeft === 1 ? '1 reminder left' : remindersLeft + ' reminders left'} before contacts are alerted.`;
+                
+                const { error: pushLogError } = await supabase
+                  .from('notification_logs')
+                  .insert({
+                    event_id: event.id,
+                    notification_type: 'push',
+                    recipient: event.user_id,
+                    content: reminderContent,
+                    status: 'pending',
+                    notification_category: 'user_reminder'
+                  });
 
-              const { error: emailLogError } = await supabase
-                .from('notification_logs')
-                .insert({
+                if (pushLogError) {
+                  console.error(`Error logging push notification for event ${event.id}:`, pushLogError);
+                  results.errors.push({
+                    event_id: event.id,
+                    type: 'push',
+                    error: pushLogError.message
+                  });
+                } else {
+                  results.userRemindersLogged.push({
+                    event_id: event.id,
+                    type: 'push',
+                    success: true
+                  });
+                }
+              } catch (error) {
+                console.error(`Error logging push notification for event ${event.id}:`, error);
+                results.errors.push({
                   event_id: event.id,
-                  notification_type: 'email',
-                  recipient: event.user_email,
-                  content: content,
-                  status: 'pending',
-                  notification_category: 'user_reminder'
+                  type: 'push',
+                  error: error.message
                 });
-
-              if (emailLogError) {
-                console.error(`Error logging email notification for event ${event.id}:`, emailLogError);
-                results.errors.push({ event_id: event.id, type: 'email', error: emailLogError.message });
-              } else {
-                results.userRemindersLogged.push({ event_id: event.id, type: 'email', success: true });
               }
-            } catch (error) {
-              console.error(`Error logging email notification for event ${event.id}:`, error);
-              results.errors.push({ event_id: event.id, type: 'email', error: error.message });
             }
-          }
 
-          // Insert SMS notification request
-          if (event.user_phone) {
-            try {
-              const smsContent = `Time to check in for "${event.name}". Please confirm you're safe. - Stay Connected`;
+            // Insert email notification request
+            if (event.user_email) {
+              try {
+                const reminderContent = `Reminder #${missedIntervals}: Time to check in for "${event.name}". ${remindersLeft === 1 ? '1 reminder left' : remindersLeft + ' reminders left'} before contacts are alerted.`;
+                
+                const { error: emailLogError } = await supabase
+                  .from('notification_logs')
+                  .insert({
+                    event_id: event.id,
+                    notification_type: 'email',
+                    recipient: event.user_email,
+                    content: reminderContent,
+                    status: 'pending',
+                    notification_category: 'user_reminder'
+                  });
 
-              const { error: smsLogError } = await supabase
-                .from('notification_logs')
-                .insert({
+                if (emailLogError) {
+                  console.error(`Error logging email notification for event ${event.id}:`, emailLogError);
+                  results.errors.push({
+                    event_id: event.id,
+                    type: 'email',
+                    error: emailLogError.message
+                  });
+                } else {
+                  results.userRemindersLogged.push({
+                    event_id: event.id,
+                    type: 'email',
+                    success: true
+                  });
+                }
+              } catch (error) {
+                console.error(`Error logging email notification for event ${event.id}:`, error);
+                results.errors.push({
                   event_id: event.id,
-                  notification_type: 'sms',
-                  recipient: event.user_phone,
-                  content: smsContent,
-                  status: 'pending',
-                  notification_category: 'user_reminder'
+                  type: 'email',
+                  error: error.message
                 });
-
-              if (smsLogError) {
-                console.error(`Error logging SMS notification for event ${event.id}:`, smsLogError);
-                results.errors.push({ event_id: event.id, type: 'sms', error: smsLogError.message });
-              } else {
-                results.userRemindersLogged.push({ event_id: event.id, type: 'sms', success: true });
               }
-            } catch (error) {
-              console.error(`Error logging SMS notification for event ${event.id}:`, error);
-              results.errors.push({ event_id: event.id, type: 'sms', error: error.message });
             }
+
+            // Insert SMS notification request
+            if (event.user_phone) {
+              try {
+                const reminderContent = `Reminder #${missedIntervals}: Time to check in for "${event.name}". ${remindersLeft === 1 ? '1 reminder left' : remindersLeft + ' reminders left'} before contacts are alerted. - Stay Connected`;
+                
+                const { error: smsLogError } = await supabase
+                  .from('notification_logs')
+                  .insert({
+                    event_id: event.id,
+                    notification_type: 'sms',
+                    recipient: event.user_phone,
+                    content: reminderContent,
+                    status: 'pending',
+                    notification_category: 'user_reminder'
+                  });
+
+                if (smsLogError) {
+                  console.error(`Error logging SMS notification for event ${event.id}:`, smsLogError);
+                  results.errors.push({
+                    event_id: event.id,
+                    type: 'sms',
+                    error: smsLogError.message
+                  });
+                } else {
+                  results.userRemindersLogged.push({
+                    event_id: event.id,
+                    type: 'sms',
+                    success: true
+                  });
+                }
+              } catch (error) {
+                console.error(`Error logging SMS notification for event ${event.id}:`, error);
+                results.errors.push({
+                  event_id: event.id,
+                  type: 'sms',
+                  error: error.message
+                });
+              }
+            }
+          } else {
+            console.log(`No reminder needed for event ${event.name}: missed_intervals=${missedIntervals}, threshold=${missedThreshold}`);
           }
         }
       }
     } catch (error) {
       console.error('Error in user reminders phase:', error);
-      results.errors.push({ phase: 'user_reminders', error: error.message });
+      results.errors.push({
+        phase: 'user_reminders',
+        error: error.message
+      });
     }
 
     // Phase 2: Log contact alerts (when missed_checkin_threshold is exceeded)
     console.log('Phase 2: Checking for events needing contact alerts...');
     try {
-      const { data: eventsNeedingContactAlerts, error: alertsError } = await supabase.rpc('get_events_needing_contact_alerts');
-      
+      const { data: eventsNeedingContactAlerts, error: alertsError } = await supabase
+        .rpc('get_events_needing_contact_alerts');
+
       if (alertsError) {
         console.error('Error getting events needing contact alerts:', alertsError);
-        results.errors.push({ phase: 'contact_alerts', error: alertsError.message });
+        results.errors.push({
+          phase: 'contact_alerts',
+          error: alertsError.message
+        });
       } else {
         console.log(`Found ${eventsNeedingContactAlerts?.length || 0} events needing contact alerts`);
         
@@ -177,7 +280,10 @@ serve(async (req) => {
 
           if (eventContactsError) {
             console.error(`Error fetching event contacts for event ${event.id}:`, eventContactsError);
-            results.errors.push({ event_id: event.id, error: eventContactsError.message });
+            results.errors.push({
+              event_id: event.id,
+              error: eventContactsError.message
+            });
             continue;
           }
 
@@ -206,13 +312,28 @@ serve(async (req) => {
 
                 if (emailLogError) {
                   console.error(`Error logging email alert for contact ${contact.email}:`, emailLogError);
-                  results.errors.push({ event_id: event.id, contact_id: contact.id, type: 'email', error: emailLogError.message });
+                  results.errors.push({
+                    event_id: event.id,
+                    contact_id: contact.id,
+                    type: 'email',
+                    error: emailLogError.message
+                  });
                 } else {
-                  results.contactAlertsLogged.push({ event_id: event.id, contact_id: contact.id, type: 'email', success: true });
+                  results.contactAlertsLogged.push({
+                    event_id: event.id,
+                    contact_id: contact.id,
+                    type: 'email',
+                    success: true
+                  });
                 }
               } catch (error) {
                 console.error(`Error logging email alert for contact ${contact.email}:`, error);
-                results.errors.push({ event_id: event.id, contact_id: contact.id, type: 'email', error: error.message });
+                results.errors.push({
+                  event_id: event.id,
+                  contact_id: contact.id,
+                  type: 'email',
+                  error: error.message
+                });
               }
             }
 
@@ -220,7 +341,7 @@ serve(async (req) => {
             if (contact.phone) {
               try {
                 const smsContent = `ALERT: ${event.user_name || 'User'} has not checked in for "${event.name}" in ${Math.floor(event.minutes_overdue || 0)} minutes. Please check on them. - Stay Connected`;
-
+                
                 const { error: smsLogError } = await supabase
                   .from('notification_logs')
                   .insert({
@@ -234,13 +355,28 @@ serve(async (req) => {
 
                 if (smsLogError) {
                   console.error(`Error logging SMS alert for contact ${contact.phone}:`, smsLogError);
-                  results.errors.push({ event_id: event.id, contact_id: contact.id, type: 'sms', error: smsLogError.message });
+                  results.errors.push({
+                    event_id: event.id,
+                    contact_id: contact.id,
+                    type: 'sms',
+                    error: smsLogError.message
+                  });
                 } else {
-                  results.contactAlertsLogged.push({ event_id: event.id, contact_id: contact.id, type: 'sms', success: true });
+                  results.contactAlertsLogged.push({
+                    event_id: event.id,
+                    contact_id: contact.id,
+                    type: 'sms',
+                    success: true
+                  });
                 }
               } catch (error) {
                 console.error(`Error logging SMS alert for contact ${contact.phone}:`, error);
-                results.errors.push({ event_id: event.id, contact_id: contact.id, type: 'sms', error: error.message });
+                results.errors.push({
+                  event_id: event.id,
+                  contact_id: contact.id,
+                  type: 'sms',
+                  error: error.message
+                });
               }
             }
           }
@@ -250,19 +386,25 @@ serve(async (req) => {
             console.log(`Contact alerts logged for event ${event.id}, no need to insert into missed_checkins table`);
           } catch (error) {
             console.error(`Error in contact alerts tracking for event ${event.id}:`, error);
-            results.errors.push({ event_id: event.id, error: error.message });
+            results.errors.push({
+              event_id: event.id,
+              error: error.message
+            });
           }
         }
       }
     } catch (error) {
       console.error('Error in contact alerts phase:', error);
-      results.errors.push({ phase: 'contact_alerts', error: error.message });
+      results.errors.push({
+        phase: 'contact_alerts',
+        error: error.message
+      });
     }
 
-    // Phase 3: Trigger events (when threshold is exceeded for an extended period)
+    // Phase 3: Trigger events (when threshold is reached)
     console.log('Phase 3: Checking for events to trigger...');
     try {
-      // Query events that should be triggered (events that have been missed for double the threshold)
+      // Query events that should be triggered 
       const { data: eventsToTrigger, error: triggerError } = await supabase
         .from('events')
         .select(`
@@ -272,7 +414,8 @@ serve(async (req) => {
           check_in_frequency,
           missed_checkin_threshold,
           last_check_in,
-          created_at
+          created_at,
+          status
         `)
         .eq('status', 'running')
         .eq('deleted', false)
@@ -280,19 +423,22 @@ serve(async (req) => {
 
       if (triggerError) {
         console.error('Error getting events to trigger:', triggerError);
-        results.errors.push({ phase: 'event_triggering', error: triggerError.message });
+        results.errors.push({
+          phase: 'event_triggering',
+          error: triggerError.message
+        });
       } else {
-        // Filter events that should be triggered (overdue for double the threshold)
+        // Filter events that should be triggered (reached the exact threshold)
         const filteredEventsToTrigger = (eventsToTrigger || []).filter(event => {
           const lastCheckin = event.last_check_in || event.created_at;
-          const checkInFrequency = event.check_in_frequency || '1 minute';
+          const checkInFrequency = event.check_in_frequency || '1 hour';
           const missedThreshold = event.missed_checkin_threshold || 5;
           
           // Parse check_in_frequency interval to minutes
-          let frequencyMinutes = 1; // default
+          let frequencyMinutes = 60; // default to 1 hour
           if (typeof checkInFrequency === 'string') {
             if (checkInFrequency.includes('minute')) {
-              frequencyMinutes = parseInt(checkInFrequency) || 1;
+              frequencyMinutes = parseInt(checkInFrequency) || 60;
             } else if (checkInFrequency.includes('hour')) {
               frequencyMinutes = (parseInt(checkInFrequency) || 1) * 60;
             } else if (checkInFrequency.includes('day')) {
@@ -301,11 +447,14 @@ serve(async (req) => {
           }
           
           const minutesSinceLastCheckin = (new Date().getTime() - new Date(lastCheckin).getTime()) / (1000 * 60);
-          const triggerThresholdMinutes = frequencyMinutes * missedThreshold * 2; // Double the threshold for triggering
+          const missedIntervals = Math.floor(minutesSinceLastCheckin / frequencyMinutes);
           
-          return minutesSinceLastCheckin >= triggerThresholdMinutes;
+          console.log(`Event ${event.name}: missed_intervals=${missedIntervals}, threshold=${missedThreshold}, should_trigger=${missedIntervals >= missedThreshold}`);
+          
+          // Trigger when missed intervals >= threshold (not threshold * 2)
+          return missedIntervals >= missedThreshold;
         });
-        
+
         console.log(`Found ${filteredEventsToTrigger?.length || 0} events to trigger`);
         
         for (const event of filteredEventsToTrigger || []) {
@@ -322,34 +471,50 @@ serve(async (req) => {
 
           if (updateError) {
             console.error(`Error updating event ${event.id} to triggered:`, updateError);
-            results.errors.push({ event_id: event.id, error: updateError.message });
+            results.errors.push({
+              event_id: event.id,
+              error: updateError.message
+            });
           } else {
-            results.eventsTriggered.push({ event_id: event.id, name: event.name });
+            results.eventsTriggered.push({
+              event_id: event.id,
+              name: event.name
+            });
           }
         }
       }
     } catch (error) {
       console.error('Error in event triggering phase:', error);
-      results.errors.push({ phase: 'event_triggering', error: error.message });
+      results.errors.push({
+        phase: 'event_triggering',
+        error: error.message
+      });
     }
 
     console.log('Inactivity check completed. Results:', results);
-
-    return new Response(
-      JSON.stringify({ success: true, results }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
+    
+    return new Response(JSON.stringify({
+      success: true,
+      results
+    }), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
       },
-    );
+      status: 200
+    });
+
   } catch (error) {
     console.error("Error in inactivity check:", error);
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 500,
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
       },
-    );
+      status: 500
+    });
   }
 });
