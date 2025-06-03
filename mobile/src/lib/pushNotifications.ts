@@ -67,7 +67,8 @@ class PushNotificationServiceImpl implements PushNotificationService {
         token = tokenData.data;
         console.log('Expo Push Token:', token);
       } catch (error) {
-        console.error('Error getting push token:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error getting push token';
+        console.error('Error getting push token:', errorMessage);
         
         // Try without project ID if the first attempt failed
         try {
@@ -76,7 +77,8 @@ class PushNotificationServiceImpl implements PushNotificationService {
           token = tokenData.data;
           console.log('Expo Push Token (retry):', token);
         } catch (retryError) {
-          console.error('Failed to get push token on retry:', retryError);
+          const retryErrorMessage = retryError instanceof Error ? retryError.message : 'Unknown retry error';
+          console.error('Failed to get push token on retry:', retryErrorMessage);
           return null;
         }
       }
@@ -89,6 +91,7 @@ class PushNotificationServiceImpl implements PushNotificationService {
 
   async storePushToken(token: string, userId: string): Promise<void> {
     try {
+      console.log('Storing push token for user:', userId);
       const { error } = await supabase
         .from('user_push_tokens')
         .upsert({
@@ -101,13 +104,19 @@ class PushNotificationServiceImpl implements PushNotificationService {
         });
 
       if (error) {
-        console.error('Error storing push token:', error);
-        throw error;
+        const errorMessage = `Database error storing push token: ${error.message || 'Unknown database error'}`;
+        console.error('Error storing push token:', errorMessage);
+        console.error('Full error object:', error);
+        throw new Error(errorMessage);
       }
       
       console.log('Push token stored successfully');
     } catch (error) {
-      console.error('Failed to store push token:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error storing push token';
+      console.error('Failed to store push token:', errorMessage);
+      if (error instanceof Error && error.stack) {
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   }

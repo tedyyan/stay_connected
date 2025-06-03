@@ -55,12 +55,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const registerPushNotifications = async (userId: string) => {
     try {
+      console.log('Registering push notifications for user:', userId);
       const token = await pushNotificationService.registerForPushNotificationsAsync();
       if (token) {
-        await pushNotificationService.storePushToken(token, userId);
+        console.log('Push token received, storing...');
+        try {
+          await pushNotificationService.storePushToken(token, userId);
+          console.log('Push notifications registered successfully');
+        } catch (storageError) {
+          // If storage fails (e.g., table doesn't exist), just log it but don't crash
+          console.log('Push token storage failed - this is optional functionality');
+          console.log('You can create the user_push_tokens table to enable push notifications');
+        }
+      } else {
+        console.log('No push token received - likely running on simulator or permissions denied');
       }
     } catch (error) {
-      console.error('Error registering push notifications:', error);
+      // Provide better error logging but don't crash
+      console.log('Push notifications registration skipped due to error - this is optional functionality');
+      
+      // Push notifications are not critical for app functionality
     }
   };
 

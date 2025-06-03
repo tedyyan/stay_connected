@@ -12,12 +12,16 @@ import HomeScreen from './src/screens/HomeScreen';
 import EventsScreen from './src/screens/EventsScreen';
 import CreateEventScreen from './src/screens/CreateEventScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import ContactsScreen from './src/screens/ContactsScreen';
+import NotificationHistoryScreen from './src/screens/NotificationHistoryScreen';
 
 export type RootStackParamList = {
   Home: undefined;
   Events: undefined;
-  CreateEvent: undefined;
+  CreateEvent: { eventToEdit?: any } | undefined;
   Profile: undefined;
+  Contacts: undefined;
+  NotificationHistory: { eventId: string; eventName: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -71,6 +75,36 @@ function AuthenticatedApp() {
           options={{ 
             headerShown: true,
             title: 'My Profile',
+            headerStyle: {
+              backgroundColor: theme.colors.primary,
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
+        <Stack.Screen 
+          name="Contacts" 
+          component={ContactsScreen}
+          options={{ 
+            headerShown: true,
+            title: 'Contacts',
+            headerStyle: {
+              backgroundColor: theme.colors.primary,
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
+        <Stack.Screen 
+          name="NotificationHistory" 
+          component={NotificationHistoryScreen}
+          options={{ 
+            headerShown: true,
+            title: 'Notification History',
             headerStyle: {
               backgroundColor: theme.colors.primary,
             },

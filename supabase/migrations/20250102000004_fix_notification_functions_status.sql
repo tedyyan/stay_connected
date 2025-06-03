@@ -1,6 +1,7 @@
--- Database functions for enhanced notification system
+-- Fix notification functions to use 'running' status instead of 'active'
+-- This ensures compatibility with the mobile app
 
--- Function to get events that need user reminders
+-- Update get_events_needing_user_reminders function
 CREATE OR REPLACE FUNCTION get_events_needing_user_reminders()
 RETURNS TABLE (
   id UUID,
@@ -38,7 +39,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get events that need contact alerts
+-- Update get_events_needing_contact_alerts function
 CREATE OR REPLACE FUNCTION get_events_needing_contact_alerts()
 RETURNS TABLE (
   id UUID,
@@ -81,7 +82,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get events that should be triggered
+-- Update get_events_to_trigger function
 CREATE OR REPLACE FUNCTION get_events_to_trigger()
 RETURNS TABLE (
   id UUID,
@@ -113,7 +114,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to perform a manual check-in
+-- Update perform_checkin function
 CREATE OR REPLACE FUNCTION perform_checkin(
   event_id_param UUID,
   user_id_param UUID,
@@ -167,7 +168,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get user's check-in status
+-- Update get_user_checkin_status function
 CREATE OR REPLACE FUNCTION get_user_checkin_status(user_id_param UUID)
 RETURNS TABLE (
   event_id UUID,
@@ -197,11 +198,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Grant execute permissions
-GRANT EXECUTE ON FUNCTION get_events_needing_user_reminders() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_events_needing_contact_alerts() TO authenticated;
-GRANT EXECUTE ON FUNCTION get_events_to_trigger() TO authenticated;
-GRANT EXECUTE ON FUNCTION perform_checkin(UUID, UUID, TEXT, TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_user_checkin_status(UUID) TO authenticated;
-
-SELECT 'Notification functions created successfully!' as result; 
+SELECT 'Notification functions updated to use running status!' as result; 
