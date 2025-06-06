@@ -2,7 +2,7 @@
   "expo": {
     "name": "Stay Connected",
     "slug": "stay-connected-mobile",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -25,7 +25,22 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.stayconnected.app",
-      "jsEngine": "jsc"
+      "jsEngine": "jsc",
+      "versionCode": 4,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK"
+      ],
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "allowBackup": false,
+      "crashReporting": {
+        "enabled": true
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -43,7 +58,9 @@
     "extra": {
       "eas": {
         "projectId": "eb31b0c9-b972-4446-9be1-d3e1f0843194"
-      }
+      },
+      "EXPO_PUBLIC_SUPABASE_URL": "https://qrbukgteabhmnfjwvrlp.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFyYnVrZ3RlYWhoZW5qYnd3cmxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc3MDUxNzEsImV4cCI6MjA2MzI4MTE3MX0.pl5ghmz0f2fMucKBbqyJ6SI9Zn7xrlDRhIQLf4h45oI"
     }
   }
 }

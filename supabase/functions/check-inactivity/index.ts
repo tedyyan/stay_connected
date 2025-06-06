@@ -95,18 +95,21 @@ serve(async (req) => {
           if (missedIntervals >= 1 && missedIntervals < missedThreshold) {
             
             // Check if we've already sent a reminder for this missed interval
+            // BUT only check reminders sent AFTER the last check-in time
+            const lastCheckinTime = event.last_check_in || event.created_at;
             const { data: existingReminders, error: reminderCheckError } = await supabase
               .from('notification_logs')
               .select('id')
               .eq('event_id', event.id)
               .eq('notification_category', 'user_reminder')
               .ilike('content', `Reminder #${missedIntervals}:%`)
+              .gt('sent_at', lastCheckinTime) // Only check reminders sent after last check-in
               .limit(1);
 
             if (reminderCheckError) {
               console.error(`Error checking existing reminders for event ${event.id}:`, reminderCheckError);
             } else if (existingReminders && existingReminders.length > 0) {
-              console.log(`Reminder #${missedIntervals} already sent for event ${event.name}, skipping`);
+              console.log(`Reminder #${missedIntervals} already sent for event ${event.name} since last check-in, skipping`);
               continue; // Skip this event, reminder already sent for this interval
             }
 

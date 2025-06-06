@@ -41,10 +41,22 @@ yarn-error.log*
 next-env.d.ts
 
 # Tempo
-
 node_modules/
 **/tempobook/dynamic/
 **/tempobook/storyboards/
+
+# Build files - but allow privacy policy
+mobile/build-*.apk
+mobile/build-*.aab
+
+# Allow privacy policy files to be committed
+!privacy-policy/
+
+# Supabase
+supabase/.temp/
+
+# Expo
+mobile/.expo/
 
 # I want to ignore the git folder
 .git

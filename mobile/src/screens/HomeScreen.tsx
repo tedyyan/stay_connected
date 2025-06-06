@@ -196,11 +196,11 @@ export default function HomeScreen({ navigation }: Props) {
     try {
       console.log('Attempting check-in for event:', eventId);
       
-      // Use the same Edge Function as the web app
+      // Use the same Edge Function as the web app - let server handle timestamp
       const { data, error } = await supabase.functions.invoke(
         "check-in",
         {
-          body: { eventId },
+          body: { eventId }, // Only send eventId, server will use server time
         },
       );
 
@@ -279,11 +279,11 @@ export default function HomeScreen({ navigation }: Props) {
         try {
           console.log(`Attempting check-in for event: ${status.event_name}`);
           
-          // Use the same Edge Function as the web app
+          // Use the same Edge Function as the web app - let server handle timestamp
           const { data, error } = await supabase.functions.invoke(
             "check-in",
             {
-              body: { eventId: status.event_id },
+              body: { eventId: status.event_id }, // Only send eventId, server will use server time
             },
           );
 
