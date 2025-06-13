@@ -1,208 +1,102 @@
-import Hero from "@/components/hero";
-import Navbar from "@/components/navbar";
-import PricingCard from "@/components/pricing-card";
-import Footer from "@/components/footer";
-import { createClient } from "../supabase/server";
-import {
-  ArrowUpRight,
-  CheckCircle2,
-  Bell,
-  Clock,
-  Shield,
-  Users,
-  AlertTriangle,
-  Activity,
-} from "lucide-react";
+import Link from "next/link";
+import Image from "next/image";
 
-export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: plans, error } = await supabase.functions.invoke(
-    "supabase-functions-get-plans",
-  );
-
+export default function PortalHome() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-      <Navbar />
-      <Hero />
-
-      {/* Features Section */}
-      <section className="py-24 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Key Features</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">
-              Our Inactivity Alert System provides peace of mind with these
-              powerful features.
-            </p>
+    <div className="min-h-screen bg-gradient-to-b from-white to-indigo-50 flex flex-col">
+      {/* Hero Section */}
+      <header className="w-full py-8 bg-white shadow-sm">
+        <div className="container mx-auto flex justify-between items-center px-6">
+          <div className="flex items-center space-x-3">
+            <Image 
+              src="/ss_icon.png" 
+              alt="Stay Connected Logo" 
+              width={40} 
+              height={40} 
+              className="rounded-lg"
+            />
+            <div className="text-2xl font-bold text-indigo-700">StayConnected</div>
           </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {[
-              {
-                icon: <Bell className="w-6 h-6" />,
-                title: "Smart Notifications",
-                description: "Automatic alerts when check-ins are missed",
-              },
-              {
-                icon: <Shield className="w-6 h-6" />,
-                title: "Privacy First",
-                description: "Your data is encrypted and secure",
-              },
-              {
-                icon: <Clock className="w-6 h-6" />,
-                title: "Flexible Scheduling",
-                description: "Daily, weekly, or monthly check-ins",
-              },
-              {
-                icon: <Activity className="w-6 h-6" />,
-                title: "Activity Logging",
-                description: "Complete history of all check-ins",
-              },
-            ].map((feature, index) => (
-              <div
-                key={index}
-                className="p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className="text-blue-600 mb-4">{feature.icon}</div>
-                <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
-                <p className="text-gray-600">{feature.description}</p>
-              </div>
-            ))}
-          </div>
+          <nav className="space-x-6 hidden md:block">
+            <Link href="/features" className="text-gray-700 hover:text-indigo-700 font-medium">Features</Link>
+            <Link href="/pricing" className="text-gray-700 hover:text-indigo-700 font-medium">Pricing</Link>
+            <Link href="/about" className="text-gray-700 hover:text-indigo-700 font-medium">About</Link>
+          </nav>
+          <Link href="/sign-in" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold shadow hover:bg-indigo-700 transition">Login</Link>
         </div>
-      </section>
+      </header>
 
-      {/* How It Works Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">How It Works</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">
-              Our simple three-step process keeps you connected and safe.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="bg-white p-8 rounded-xl shadow-sm text-center relative">
-              <div className="bg-blue-100 text-blue-600 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-6 text-xl font-bold">
-                1
-              </div>
-              <h3 className="text-xl font-semibold mb-4">Set Your Schedule</h3>
-              <p className="text-gray-600">
-                Choose how often you need to check in and who should be notified
-                if you miss one.
-              </p>
-            </div>
-
-            <div className="bg-white p-8 rounded-xl shadow-sm text-center relative">
-              <div className="bg-blue-100 text-blue-600 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-6 text-xl font-bold">
-                2
-              </div>
-              <h3 className="text-xl font-semibold mb-4">Check In Regularly</h3>
-              <p className="text-gray-600">
-                Simply click the "I'm Here" button before your scheduled
-                deadline.
-              </p>
-            </div>
-
-            <div className="bg-white p-8 rounded-xl shadow-sm text-center relative">
-              <div className="bg-blue-100 text-blue-600 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-6 text-xl font-bold">
-                3
-              </div>
-              <h3 className="text-xl font-semibold mb-4">Automatic Alerts</h3>
-              <p className="text-gray-600">
-                If you miss a check-in, your contacts are automatically notified
-                through your preferred methods.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Use Cases Section */}
-      <section className="py-20 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Who Can Benefit</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">
-              Our system helps people in many different situations stay safe.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            <div className="bg-blue-50 p-8 rounded-xl">
-              <h3 className="text-xl font-semibold mb-4">Solo Adventurers</h3>
-              <p className="text-gray-600 mb-4">
-                Hikers, travelers, and outdoor enthusiasts who venture alone can
-                ensure someone is alerted if they don't return on schedule.
-              </p>
-              <div className="flex items-center text-blue-600">
-                <AlertTriangle className="w-5 h-5 mr-2" />
-                <span className="font-medium">
-                  Safety net for the unexpected
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 p-8 rounded-xl">
-              <h3 className="text-xl font-semibold mb-4">
-                Independent Seniors
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Elderly individuals living alone can maintain their independence
-                while giving family members peace of mind.
-              </p>
-              <div className="flex items-center text-blue-600">
-                <Users className="w-5 h-5 mr-2" />
-                <span className="font-medium">Connected but independent</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing Section */}
-      <section className="py-24 bg-gray-50" id="pricing">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">
-              Simple, Transparent Pricing
-            </h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">
-              Choose the perfect plan for your needs. No hidden fees.
-            </p>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {plans?.map((item: any) => (
-              <PricingCard key={item.id} item={item} user={user} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 bg-white">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-4">Ready to Stay Connected?</h2>
-          <p className="text-gray-600 mb-8 max-w-2xl mx-auto">
-            Set up your first check-in schedule in minutes and gain peace of
-            mind today.
+      <main className="flex-1 flex flex-col items-center justify-center text-center px-4">
+        <section className="max-w-2xl mt-16 mb-12">
+          <h1 className="text-4xl md:text-5xl font-extrabold mb-6 text-gray-900 leading-tight">
+            Stay Connected in the Blink of AI
+          </h1>
+          <p className="text-lg md:text-xl text-gray-600 mb-8">
+            Smart check-in reminders for your peace of mind. Get alerted if a loved one misses their routine check-in. <br />
+            <span className="text-indigo-600 font-semibold">Automatic notifications, easy setup, and total control.</span>
           </p>
-          <a
-            href="/sign-up"
-            className="inline-flex items-center px-6 py-3 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Get Started
-            <ArrowUpRight className="ml-2 w-4 h-4" />
-          </a>
-        </div>
-      </section>
+          <Link href="/sign-in" className="inline-block px-8 py-4 bg-indigo-600 text-white text-lg rounded-lg font-bold shadow hover:bg-indigo-700 transition mb-4">
+            Start for Free
+          </Link>
+          <div className="text-sm text-gray-400">No credit card required</div>
+        </section>
 
-      <Footer />
+        {/* Introduction Video Section */}
+        <section className="w-full max-w-4xl mx-auto mb-16">
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <h2 className="text-2xl font-bold mb-6 text-gray-900">See How It Works</h2>
+            <div className="relative w-full max-w-3xl mx-auto">
+              <video 
+                className="w-full rounded-lg shadow-md"
+                controls
+                poster="/ss_icon.png"
+                preload="metadata"
+              >
+                <source src="/intro.mp4" type="video/mp4" />
+                <p className="text-gray-600">
+                  Your browser doesn't support video playback. 
+                  <a href="/intro.mp4" className="text-indigo-600 hover:underline">
+                    Download the video
+                  </a> instead.
+                </p>
+              </video>
+            </div>
+            <p className="text-gray-600 mt-4">Watch our quick introduction to see how Stay Connected keeps your loved ones safe</p>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section id="features" className="w-full max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+          <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+            <span className="text-indigo-600 text-3xl mb-2">🔔</span>
+            <h3 className="font-bold text-lg mb-2">Auto Notifications</h3>
+            <p className="text-gray-600 text-sm">Email & SMS alerts if no check-in happens by the deadline.</p>
+          </div>
+          <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+            <span className="text-indigo-600 text-3xl mb-2">📅</span>
+            <h3 className="font-bold text-lg mb-2">Custom Events</h3>
+            <p className="text-gray-600 text-sm">Schedule personalized check-ins for any purpose—daily, weekly, or custom.</p>
+          </div>
+          <div className="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+            <span className="text-indigo-600 text-3xl mb-2">👥</span>
+            <h3 className="font-bold text-lg mb-2">Contact Management</h3>
+            <p className="text-gray-600 text-sm">Easily manage trusted contacts who get notified if you don't check in.</p>
+          </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="mb-24">
+          <h2 className="text-2xl font-bold mb-2">Get Peace of Mind Today</h2>
+          <p className="text-gray-600 mb-4">Try StayConnected free for 14 days. No credit card required.</p>
+          <Link href="/sign-in" className="px-8 py-3 bg-indigo-600 text-white rounded-lg font-semibold shadow hover:bg-indigo-700 transition">
+            Try Now
+          </Link>
+        </section>
+      </main>
+
+      <footer className="w-full py-6 bg-white border-t text-center text-gray-400 text-sm">
+        &copy; {new Date().getFullYear()} StayConnected. All rights reserved.
+      </footer>
     </div>
   );
 }
